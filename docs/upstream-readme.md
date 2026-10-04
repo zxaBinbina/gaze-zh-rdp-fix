@@ -19,9 +19,9 @@
 ---
 
 > [!NOTE]
-> Gaze includes local liveness anti-spoofing and support for infrared (IR) cameras to secure authentication against spoofing attacks. For high-security environments, it is recommended to keep standard system authentication active as a fallback.
+> Gaze includes local liveness anti-spoofing checks and supports infrared (IR) cameras. In high-security environments, we recommend keeping your usual system authentication enabled as a fallback.
 
-Facial authentication for Linux with on-device face recognition, PAM integration, and tools for login, lock screen, sudo, and desktop management.
+Gaze brings facial authentication to Linux with on-device face recognition, PAM integration, and tools for login, lock screens, `sudo`, and desktop management.
 
 ## Install
 
@@ -29,21 +29,25 @@ Facial authentication for Linux with on-device face recognition, PAM integration
 curl -fsSL https://gaze.gundulabs.com/install.sh | sh
 ```
 
-The installer installs the Gaze daemon, CLI, and GUI. It supports openSUSE Tumbleweed on x86_64 through its native `zypper` package manager and a Tumbleweed-specific RPM repository. It installs the GNOME Shell extension only when it detects a GNOME desktop session; on Cinnamon it installs `gaze-cinnamon-extension`, on KDE Plasma it installs `gaze-kde`, and on other desktops it skips the desktop extension packages so it does not pull in GNOME Shell. If you installed the GNOME extension manually or automatic enablement was not possible, reboot (so GNOME Shell scans the new extension) and then run from GNOME:
+The installer sets up the Gaze daemon, CLI, and GUI. On openSUSE Tumbleweed (x86_64), it uses the native `zypper` package manager and Gaze's Tumbleweed-specific RPM repository.
+
+It chooses desktop integration based on your session: GNOME gets the GNOME Shell extension, Cinnamon gets `gaze-cinnamon-extension`, KDE Plasma gets `gaze-kde`, and Quickshell Omarchy gets `gaze-omarchy`. On other desktops, the installer skips desktop extensions rather than pulling in GNOME Shell.
+
+If you installed the GNOME extension manually, or the installer could not enable it automatically, reboot first so GNOME Shell can scan the new extension. Then, from your GNOME session, run:
 
 ```bash
 gnome-extensions enable gaze@gundulabs.com
 gsettings set org.gnome.shell.extensions.gaze enable-face-authentication true
 ```
 
-> Running `gnome-extensions enable` before rebooting will return `Extension "gaze@gundulabs.com" does not exist`. Shell only rescans extension directories at session start, and it drops extension IDs it has not scanned, so an enable applied before the reboot can vanish at the next logout. Reboot first, then run the commands. `gaze doctor` reports this case and prints the steps.
+> If you run `gnome-extensions enable` before rebooting, it reports `Extension "gaze@gundulabs.com" does not exist`. GNOME Shell scans extension directories only when a session starts and drops IDs it has not scanned. As a result, enabling the extension before reboot can appear to work but disappear at your next logout. To avoid this, reboot before running the commands above. `gaze doctor` can detect the issue and prints the same steps.
 
 <details>
 <summary>Manual install (Debian/Ubuntu, Fedora/openSUSE RPM systems, Arch/Manjaro/CachyOS)</summary>
 
 **Debian / Ubuntu**
 
-Each apt suite carries only the builds for that release: `noble` (Ubuntu 24.04), `questing` (Ubuntu 25.10), `resolute` (Ubuntu 26.04), `trixie` (Debian 13), `forky` (Debian 14, testing).
+Each apt suite carries only the builds for that release: `noble` (Ubuntu 24.04), `questing` (Ubuntu 25.10), `resolute` (Ubuntu 26.04), `stonking` (Ubuntu 26.10), `trixie` (Debian 13), `forky` (Debian 14, testing).
 
 ```bash
 sudo mkdir -p --mode=0755 /usr/share/keyrings
@@ -92,7 +96,7 @@ sudo rpm-ostree install gaze gaze-gui
 
 ```bash
 sudo dnf install dnf-plugins-core
-sudo dnf copr enable @gundulabs/gaze
+sudo dnf copr enable gundulabs/gaze
 sudo dnf install gaze gaze-gui
 ```
 
@@ -127,7 +131,9 @@ yay -S --needed gaze-bin gaze-gui-bin
 flatpak install --from https://packages.gundulabs.com/flatpak/com.gundulabs.Gaze.flatpakref
 ```
 
-On openSUSE Tumbleweed, the RPM post-install script enables the shared PAM stack; reapply it manually with `sudo pam-config --add --gaze && sudo pam-config --update` if needed. For GNOME lock screen face unlock after manual package installation, also install `gaze-gnome-extension` (`gaze-gnome-extension-bin` on Arch), reboot, then from your GNOME session run `gnome-extensions enable gaze@gundulabs.com` and `gsettings set org.gnome.shell.extensions.gaze enable-face-authentication true`. On Cinnamon, install `gaze-cinnamon-extension` and enable it from **System Settings → Extensions**; see the [Cinnamon guide](https://gaze.gundulabs.com/guide/cinnamon). On KDE Plasma, install `gaze-kde` (`gaze-kde-bin` on Arch) for hands-free lock screen face unlock and a Face Unlock entry in System Settings; see the [KDE guide](https://gaze.gundulabs.com/guide/kde).
+On openSUSE Tumbleweed, the RPM post-install script enables Gaze in the shared PAM stack. If needed, reapply that setting with `sudo pam-config --add --gaze && sudo pam-config --update`.
+
+For GNOME lock screen face unlock after a manual package install, also install `gaze-gnome-extension` (`gaze-gnome-extension-bin` on Arch) and reboot. Then run `gnome-extensions enable gaze@gundulabs.com` and `gsettings set org.gnome.shell.extensions.gaze enable-face-authentication true` from your GNOME session. On Cinnamon, install `gaze-cinnamon-extension` and enable it from **System Settings → Extensions**; see the [Cinnamon guide](https://gaze.gundulabs.com/guide/cinnamon). On KDE Plasma, install `gaze-kde` (`gaze-kde-bin` on Arch) to enable hands-free lock screen face unlock and add a Face Unlock entry to System Settings; see the [KDE guide](https://gaze.gundulabs.com/guide/kde).
 
 </details>
 
@@ -152,7 +158,7 @@ See the [Nix & NixOS guide](https://gaze.gundulabs.com/guide/nixos) for module o
 
 </details>
 
-After installation (any method), reboot once to ensure all system-level changes are fully applied.
+After installing Gaze by any method, reboot once to apply all system-level changes.
 
 ```bash
 sudo reboot
@@ -173,9 +179,9 @@ gaze-gui
 
 ## How it works
 
-Gaze runs a daemon (`gazed`) that communicates over DBus. When authentication is requested (by PAM at login, the GNOME extension on the lock screen, or the CLI), the daemon captures a frame from your webcam, detects and aligns the face, computes an embedding using an ONNX model, and compares it against stored enrollments.
+Gaze's daemon (`gazed`) communicates over DBus. When PAM, the GNOME lock screen extension, or the CLI requests authentication, the daemon captures a frame from your webcam, detects and aligns your face, then uses an ONNX model to create an embedding and compare it with your enrolled profiles.
 
-All processing happens locally. Face embeddings are stored on disk, not transmitted anywhere.
+Everything stays on your machine: Gaze processes faces locally and stores embeddings on disk. It does not transmit face data anywhere.
 
 ```
 Camera → Face Detection (SCRFD) → Alignment → Embedding (ArcFace) → Match → Liveness (MiniFASNet-V2)
@@ -193,6 +199,7 @@ Camera → Face Detection (SCRFD) → Alignment → Embedding (ArcFace) → Matc
 | `gaze-gnome-extension` | GNOME Shell extension for lock screen and GDM auth |
 | `gaze-cinnamon-extension` | Cinnamon Spices extension for lock screen and PolKit auth |
 | `gaze-kde` | KDE Plasma lock screen wiring and a Face Unlock entry in System Settings |
+| `gaze-omarchy` | Omarchy Quickshell lock plugin with independent password, fingerprint and face authentication |
 | `gaze-hyprlock` | PAM service for hyprlock face unlock on Hyprland |
 
 ## Configuration
@@ -200,8 +207,8 @@ Camera → Face Detection (SCRFD) → Alignment → Embedding (ArcFace) → Matc
 ```toml
 # /etc/gaze/config.toml
 [inference]
-execution_provider = "cpu" # cpu | openvino (requires an OpenVINO build)
-device = "cpu"             # cpu, or gpu | npu on an OpenVINO build
+execution_provider = "cpu" # cpu | auto | openvino | vitis
+device = "cpu"             # auto/vitis: npu; openvino: cpu | gpu | npu
 
 [security]
 level = "medium"    # low | medium | high | maximum | custom
@@ -225,14 +232,15 @@ threshold = 0.8
 [storage]
 encrypt_templates = false   # seal face templates to the TPM
 unlock_kwallet = false # optional TPM-backed KDE wallet unlock
-unlock_gnome_keyring = false # unlock the GNOME keyring after a GDM face login
+unlock_gnome_keyring = false # unlock the GNOME keyring after a GDM or greetd face login
 ```
 
-OpenVINO selects its device at run time. An OpenVINO-enabled installation
-should use `execution_provider = "openvino"` and `device = "npu"` to select the
-Intel NPU. The same binary can select the Intel GPU by changing `device` to
-`"gpu"`. The released packages are CPU-only; OpenVINO requires building from
-source with `just build-rust-openvino`.
+Standard builds support Intel OpenVINO and AMD Ryzen AI NPU runtimes, but use
+the CPU by default. To enable acceleration, install the vendor drivers and
+runtime, register it under `/usr/lib/gaze/runtimes`, and set `auto/npu`. Then
+restart `gazed` and run `gaze doctor --benchmark`.
+See the [hardware acceleration guide](https://gaze.gundulabs.com/guide/acceleration) for supported hardware,
+SDK installation, CPU fallback, and precision validation.
 
 See the [configuration guide](https://gaze.gundulabs.com/guide/configuration) for all options.
 
@@ -259,8 +267,8 @@ gaze uninstall               Completely remove Gaze (packages, PAM, config, mode
 gaze uninstall -y            Skip confirmation prompt
 ```
 
-Enrollment first captures a straight-on reference, then asks for small up, down,
-left, and right movements relative to that reference.
+Enrollment starts with a straight-on reference. Gaze then asks you to make small
+up, down, left, and right movements relative to that pose.
 
 ## Building from source
 
@@ -279,14 +287,26 @@ sudo apt install build-essential pkg-config clang libclang-dev \
 # Build
 just build-rust
 
-# Build with OpenVINO support (requires an OpenVINO-enabled system ONNX Runtime)
-just build-rust-openvino
+# The same build includes Intel and AMD NPU provider adapters
+# Vendor drivers and runtimes are installed separately; see the hardware acceleration guide
 
 # Package
 just package <deb | rpm | archlinux>
 ```
 
 See the [development guide](https://gaze.gundulabs.com/guide/development) for more.
+
+## Repository layout
+
+| Directory | Contents |
+| --- | --- |
+| `crates/` | Rust daemon, CLI, GUI, shared libraries, and PAM modules |
+| `integrations/` | GNOME Shell, Cinnamon, KDE, and Omarchy source |
+| `packaging/` | Package definitions, lifecycle hooks, and installed system configuration |
+| `scripts/` | Development helpers and integration test harnesses |
+| `docs/` | User and contributor documentation |
+
+The root `Cargo.toml`, `Justfile`, and `flake.nix` coordinate the workspace.
 
 ## License
 

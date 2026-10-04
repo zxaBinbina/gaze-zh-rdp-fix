@@ -1,6 +1,6 @@
---- a/pam-gaze/src/auth.rs
-+++ b/pam-gaze/src/auth.rs
-@@ -758,9 +758,13 @@
+--- a/crates/pam-gaze/src/auth.rs
++++ b/crates/pam-gaze/src/auth.rs
+@@ -763,9 +763,13 @@
      if caller_is_remote(unsafe { get_pam_rhost(pamh) }.as_deref()) {
          return PAM_IGNORE;
      }
@@ -15,9 +15,9 @@
          let mut attempted = std::ptr::null();
          if unsafe { pam_get_data(pamh, c"gaze_kde_login_attempted".as_ptr(), &mut attempted) }
              == PAM_SUCCESS
---- a/pam-gaze/src/core.rs
-+++ b/pam-gaze/src/core.rs
-@@ -958,6 +958,14 @@
+--- a/crates/pam-gaze/src/core.rs
++++ b/crates/pam-gaze/src/core.rs
+@@ -1046,6 +1046,14 @@
      }
  }
  
@@ -32,7 +32,7 @@
  pub fn service_defers_to_face_service(service: Option<&str>) -> bool {
      match service {
          Some(name) => name.starts_with("gdm-") && name != FACE_PAM_SERVICE,
-@@ -1080,6 +1088,43 @@
+@@ -1172,6 +1180,43 @@
          ] {
              assert!(!caller_is_remote(rhost), "{rhost:?}");
          }
