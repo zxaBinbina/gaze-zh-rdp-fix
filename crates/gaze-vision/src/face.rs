@@ -1,0 +1,1009 @@
+// SPDX-FileCopyrightText: 2026 Gundu Labs
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+use crate::detect::{DetectError, FaceDetector};
+use gaze_core::config::Config;
+use gaze_core::dbus::{CaptureStatus, EnrollPrompt};
+use opencv::core::Mat;
+use opencv::prelude::*;
+use std::sync::{Mutex, MutexGuard};
+
+const MAX_FACE_SIZE_RATIO: f32 = 0.78;
+const ENROLL_POSE_STABILITY_WINDOW: usize = 2;
+const ENROLL_STABLE_YAW_RANGE: f32 = 0.08;
+const ENROLL_STABLE_PITCH_RANGE: f32 = 0.06;
+const ENROLL_HORIZONTAL_POSE_DELTA: f32 = 0.16;
+const ENROLL_VERTICAL_POSE_DELTA: f32 = 0.07;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Spectrum {
+    Rgb,
+    Ir,
+}
+
+pub struct CaptureResult {
+    pub width: u32,
+    pub height: u32,
+    pub bbox: Option<(f32, f32, f32, f32)>,
+    pub kpss: Option<ndarray::Array3<f32>>,
+    pub mat_rgb: Option<opencv::core::Mat>,
+    pub yaw: f32,
+    pub pitch: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RgbFaceLuma {
+    pub mean: u8,
+    pub rolling_mean: f64,
+    pub threshold: u8,
+}
+
+fn lock_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|err| err.into_inner())
+}
+
+/// Returns true when a square-padded detector box comes within 5% of the image edge.
+fn bbox_is_clipped(bbox: (f32, f32, f32, f32), frame_w: f32, frame_h: f32) -> bool {
+    const EDGE_MARGIN: f32 = 0.05;
+    let max_dim = frame_w.max(frame_h);
+    let pad_x = ((max_dim - frame_w) / 2.0).floor();
+    let pad_y = ((max_dim - frame_h) / 2.0).floor();
+    let (x1, y1, x2, y2) = bbox;
+
+    x1 - pad_x < EDGE_MARGIN * frame_w
+        || y1 - pad_y < EDGE_MARGIN * frame_h
+        || x2 - pad_x > (1.0 - EDGE_MARGIN) * frame_w
+        || y2 - pad_y > (1.0 - EDGE_MARGIN) * frame_h
+}
+
+fn geometry_status(
+    bbox: (f32, f32, f32, f32),
+    frame_w: f32,
+    frame_h: f32,
+    check_centering_and_proximity: bool,
+    min_face_size_ratio: f32,
+) -> Option<CaptureStatus> {
+    if bbox_is_clipped(bbox, frame_w, frame_h) {
+        return Some(CaptureStatus::Clipped);
+    }
+    if !check_centering_and_proximity {
+        return None;
+    }
+
+    let (x1, y1, x2, y2) = bbox;
+    let max_dim = frame_w.max(frame_h);
+    let min_dim = frame_w.min(frame_h);
+    let (width, height) = (x2 - x1, y2 - y1);
+    let (cx, cy) = (x1 + width / 2.0, y1 + height / 2.0);
+    let (norm_cx, norm_cy) = (cx / max_dim, cy / max_dim);
+    let face_size_ratio = width.max(height) / min_dim;
+
+    if (norm_cx - 0.5).abs() >= 0.2 || (norm_cy - 0.5).abs() >= 0.2 {
+        Some(CaptureStatus::NotCentered)
+    } else if face_size_ratio < min_face_size_ratio {
+        Some(CaptureStatus::TooFar)
+    } else if face_size_ratio > MAX_FACE_SIZE_RATIO {
+        Some(CaptureStatus::TooClose)
+    } else {
+        None
+    }
+}
+
+/// Yaw and pitch are unitless ratios derived from landmarks, not angles. Yaw measures the nose
+/// offset in eye-widths; pitch measures vertical position in eye-to-mouth heights. Their thresholds
+/// are ratios as well.
+pub fn estimate_head_pose(kps: &ndarray::Array3<f32>) -> Option<(f32, f32)> {
+    let shape = kps.shape();
+    if shape[0] < 1 || shape[1] < 5 || shape[2] < 2 {
+        return None;
+    }
+
+    let point = |index| (kps[[0, index, 0]], kps[[0, index, 1]]);
+    let (lx, ly) = point(0);
+    let (rx, ry) = point(1);
+    let (nx, ny) = point(2);
+    let (mlx, mly) = point(3);
+    let (mrx, mry) = point(4);
+    if [lx, ly, rx, ry, nx, ny, mlx, mly, mrx, mry]
+        .iter()
+        .any(|value| !value.is_finite())
+    {
+        return None;
+    }
+
+    // Project the nose into a coordinate system defined by the eye line. This
+    // prevents head roll from being misread as yaw or pitch.
+    let eye_dx = rx - lx;
+    let eye_dy = ry - ly;
+    let eye_distance = eye_dx.hypot(eye_dy);
+    if eye_distance <= f32::EPSILON {
+        return None;
+    }
+    let horizontal = (eye_dx / eye_distance, eye_dy / eye_distance);
+    let vertical = (-horizontal.1, horizontal.0);
+
+    let eye_center = ((lx + rx) / 2.0, (ly + ry) / 2.0);
+    let mouth_center = ((mlx + mrx) / 2.0, (mly + mry) / 2.0);
+    let nose_from_eyes = (nx - eye_center.0, ny - eye_center.1);
+    let mouth_from_eyes = (mouth_center.0 - eye_center.0, mouth_center.1 - eye_center.1);
+    let mouth_distance = mouth_from_eyes.0 * vertical.0 + mouth_from_eyes.1 * vertical.1;
+    if mouth_distance <= f32::EPSILON {
+        return None;
+    }
+
+    let yaw = (nose_from_eyes.0 * horizontal.0 + nose_from_eyes.1 * horizontal.1) / eye_distance;
+    let pitch = (nose_from_eyes.0 * vertical.0 + nose_from_eyes.1 * vertical.1) / mouth_distance;
+    (yaw.is_finite() && pitch.is_finite()).then_some((yaw, pitch))
+}
+
+#[derive(Default)]
+pub struct EnrollmentPoseStability {
+    samples: std::collections::VecDeque<(f32, f32)>,
+}
+
+impl EnrollmentPoseStability {
+    pub fn reset(&mut self) {
+        self.samples.clear();
+    }
+
+    pub fn update(&mut self, prompt: EnrollPrompt, yaw: f32, pitch: f32) -> bool {
+        if !yaw.is_finite() || !pitch.is_finite() {
+            self.reset();
+            return false;
+        }
+
+        self.samples.push_back((yaw, pitch));
+        if self.samples.len() > ENROLL_POSE_STABILITY_WINDOW {
+            self.samples.pop_front();
+        }
+        if self.samples.len() < ENROLL_POSE_STABILITY_WINDOW {
+            return false;
+        }
+
+        let (mut min_yaw, mut max_yaw) = (f32::INFINITY, f32::NEG_INFINITY);
+        let (mut min_pitch, mut max_pitch) = (f32::INFINITY, f32::NEG_INFINITY);
+        for &(sample_yaw, sample_pitch) in &self.samples {
+            min_yaw = min_yaw.min(sample_yaw);
+            max_yaw = max_yaw.max(sample_yaw);
+            min_pitch = min_pitch.min(sample_pitch);
+            max_pitch = max_pitch.max(sample_pitch);
+        }
+
+        let stable_yaw = max_yaw - min_yaw < ENROLL_STABLE_YAW_RANGE;
+        let stable_pitch = max_pitch - min_pitch < ENROLL_STABLE_PITCH_RANGE;
+        // Directional prompts allow movement along the requested axis; only the other axis
+        // must settle. Requiring both would reject the turn the user was asked to make.
+        match prompt {
+            EnrollPrompt::LookStraight => stable_yaw && stable_pitch,
+            EnrollPrompt::LookUp | EnrollPrompt::LookDown => stable_yaw,
+            EnrollPrompt::LookLeft | EnrollPrompt::LookRight => stable_pitch,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IrFrameKind {
+    Lit,
+    StrobeDark,
+    EmitterDark,
+}
+
+/// Windows Hello emitters strobe, lighting only alternate frames, so an isolated dark frame is
+/// normal and only an unbroken streak means the emitter never fired.
+pub struct IrDarkFrameGate {
+    threshold: u8,
+    consecutive_dark: u32,
+}
+
+impl IrDarkFrameGate {
+    const EMITTER_DARK_STREAK: u32 = 8;
+
+    pub fn new(threshold: u8) -> Self {
+        Self {
+            threshold,
+            consecutive_dark: 0,
+        }
+    }
+
+    pub fn classify(&mut self, frame: &Mat) -> IrFrameKind {
+        let luma = frame_mean_luma(frame).unwrap_or(0);
+        self.classify_luma(luma)
+    }
+
+    pub fn classify_with_luma(&mut self, frame: &Mat) -> (IrFrameKind, u8) {
+        let luma = frame_mean_luma(frame).unwrap_or(0);
+        (self.classify_luma(luma), luma)
+    }
+
+    fn classify_luma(&mut self, luma: u8) -> IrFrameKind {
+        if luma >= self.threshold {
+            self.consecutive_dark = 0;
+            return IrFrameKind::Lit;
+        }
+        self.consecutive_dark = self.consecutive_dark.saturating_add(1);
+        if self.consecutive_dark >= Self::EMITTER_DARK_STREAK {
+            IrFrameKind::EmitterDark
+        } else {
+            IrFrameKind::StrobeDark
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RgbFrameKind {
+    Lit,
+    WarmupDark,
+    SettledDark,
+    SteadyDark,
+}
+
+pub struct RgbWarmupGate {
+    threshold: u8,
+    first_frame_at: Option<std::time::Instant>,
+    baseline: Option<u8>,
+    brightest: u8,
+    frames: u32,
+    lit_once: bool,
+}
+
+impl RgbWarmupGate {
+    pub const WARMUP: std::time::Duration = std::time::Duration::from_secs(2);
+    const TREND_GRACE: std::time::Duration = std::time::Duration::from_secs(1);
+    const TREND_FRAMES: u32 = 8;
+    const RISE_MARGIN: u8 = 2;
+
+    pub fn new(threshold: u8) -> Self {
+        Self {
+            threshold,
+            first_frame_at: None,
+            baseline: None,
+            brightest: 0,
+            frames: 0,
+            lit_once: false,
+        }
+    }
+
+    pub fn classify_with_luma(&mut self, frame: &Mat) -> (RgbFrameKind, u8) {
+        let luma = frame_mean_luma(frame).unwrap_or(0);
+        (self.classify_luma(luma, std::time::Instant::now()), luma)
+    }
+
+    fn classify_luma(&mut self, luma: u8, now: std::time::Instant) -> RgbFrameKind {
+        let first_frame_at = *self.first_frame_at.get_or_insert(now);
+        let baseline = *self.baseline.get_or_insert(luma);
+        self.brightest = self.brightest.max(luma);
+        self.frames = self.frames.saturating_add(1);
+
+        if luma >= self.threshold {
+            self.lit_once = true;
+            return RgbFrameKind::Lit;
+        }
+        if self.lit_once {
+            return RgbFrameKind::SteadyDark;
+        }
+
+        let elapsed = now.duration_since(first_frame_at);
+        if elapsed >= Self::WARMUP {
+            return RgbFrameKind::SettledDark;
+        }
+
+        let rising = self.brightest.saturating_sub(baseline) >= Self::RISE_MARGIN;
+        if !rising && elapsed >= Self::TREND_GRACE && self.frames >= Self::TREND_FRAMES {
+            return RgbFrameKind::SteadyDark;
+        }
+
+        RgbFrameKind::WarmupDark
+    }
+}
+
+pub fn enrollment_pose_matches(
+    prompt: EnrollPrompt,
+    yaw: f32,
+    pitch: f32,
+    baseline: Option<(f32, f32)>,
+) -> bool {
+    if !yaw.is_finite() || !pitch.is_finite() {
+        return false;
+    }
+
+    match prompt {
+        EnrollPrompt::LookStraight => yaw.abs() < 0.18 && (0.2..0.8).contains(&pitch),
+        EnrollPrompt::LookUp => {
+            baseline.is_some_and(|(_, base_pitch)| pitch < base_pitch - ENROLL_VERTICAL_POSE_DELTA)
+        }
+        EnrollPrompt::LookDown => {
+            baseline.is_some_and(|(_, base_pitch)| pitch > base_pitch + ENROLL_VERTICAL_POSE_DELTA)
+        }
+        EnrollPrompt::LookLeft => {
+            baseline.is_some_and(|(base_yaw, _)| yaw < base_yaw - ENROLL_HORIZONTAL_POSE_DELTA)
+        }
+        EnrollPrompt::LookRight => {
+            baseline.is_some_and(|(base_yaw, _)| yaw > base_yaw + ENROLL_HORIZONTAL_POSE_DELTA)
+        }
+        _ => false,
+    }
+}
+
+pub struct FaceChecker {
+    pub detector: std::sync::Arc<std::sync::Mutex<FaceDetector>>,
+    pub dark_luma_threshold: u8,
+    pub rgb_luma_history: std::collections::VecDeque<u8>,
+    last_rgb_face_luma: Option<RgbFaceLuma>,
+    pub spectrum: Spectrum,
+    pub check_centering_and_proximity: bool,
+    pub min_face_size_ratio: f32,
+}
+
+impl FaceChecker {
+    pub fn new(
+        detector: std::sync::Arc<std::sync::Mutex<FaceDetector>>,
+        config: &Config,
+        spectrum: Spectrum,
+        check_centering_and_proximity: bool,
+    ) -> Self {
+        Self {
+            detector,
+            dark_luma_threshold: config.cameras.dark_luma_threshold,
+            rgb_luma_history: std::collections::VecDeque::new(),
+            last_rgb_face_luma: None,
+            spectrum,
+            check_centering_and_proximity,
+            min_face_size_ratio: config.enrollment.effective_min_face_size_ratio(),
+        }
+    }
+
+    fn build_capture_result(
+        frame: &Mat,
+        bbox: Option<(f32, f32, f32, f32)>,
+        kpss: Option<ndarray::Array3<f32>>,
+        mat_rgb: Option<opencv::core::Mat>,
+        yaw: f32,
+        pitch: f32,
+    ) -> anyhow::Result<CaptureResult> {
+        let sz = frame.size()?;
+        Ok(CaptureResult {
+            width: sz.width as u32,
+            height: sz.height as u32,
+            bbox,
+            kpss,
+            mat_rgb,
+            yaw,
+            pitch,
+        })
+    }
+
+    pub fn dark_gate(spectrum: Spectrum, threshold: u8, frame: &Mat) -> Option<CaptureStatus> {
+        match spectrum {
+            Spectrum::Rgb if frame_is_too_dark(frame, threshold) => Some(CaptureStatus::TooDark),
+            _ => None,
+        }
+    }
+
+    pub fn capture_status(
+        &mut self,
+        frame: &Mat,
+    ) -> anyhow::Result<(CaptureStatus, Option<CaptureResult>)> {
+        self.last_rgb_face_luma = None;
+
+        if let Some(status) = Self::dark_gate(self.spectrum, self.dark_luma_threshold, frame) {
+            tracing::debug!(
+                "frame too dark: luma={} threshold={}",
+                frame_mean_luma(frame).unwrap_or(0),
+                self.dark_luma_threshold
+            );
+            return Ok((status, None));
+        }
+
+        let detection = {
+            let mut detector = lock_recover(&self.detector);
+            detector.detect(frame)
+        };
+        let (bboxes, kps, mat_rgb) = match detection {
+            Ok(result) => result,
+            Err(DetectError::NoFacesDetected) => return Ok((CaptureStatus::NoFace, None)),
+            Err(err) => return Err(err.into()),
+        };
+
+        let face = bboxes.row(0);
+        let x1 = face[0];
+        let y1 = face[1];
+        let x2 = face[2];
+        let y2 = face[3];
+
+        let (yaw, pitch) = kps
+            .as_ref()
+            .and_then(estimate_head_pose)
+            .unwrap_or((f32::NAN, f32::NAN));
+
+        let status = if let Some(status) = geometry_status(
+            (x1, y1, x2, y2),
+            frame.cols() as f32,
+            frame.rows() as f32,
+            self.check_centering_and_proximity,
+            self.min_face_size_ratio,
+        ) {
+            status
+        } else if kps.is_none() {
+            return Ok((CaptureStatus::NoFace, None));
+        } else {
+            if let Spectrum::Rgb = self.spectrum {
+                let w = frame.cols() as f32;
+                let h = frame.rows() as f32;
+                let max_dim = w.max(h);
+                let top = ((max_dim - h) / 2.0).floor();
+                let left = ((max_dim - w) / 2.0).floor();
+
+                let x1_unpadded = x1 - left;
+                let y1_unpadded = y1 - top;
+                let x2_unpadded = x2 - left;
+                let y2_unpadded = y2 - top;
+
+                let face_rect =
+                    clamp_bbox(frame, (x1_unpadded, y1_unpadded, x2_unpadded, y2_unpadded));
+                if let Ok(face_roi) = Mat::roi(frame, face_rect).and_then(|r| r.try_clone()) {
+                    let luma = frame_mean_luma(&face_roi).unwrap_or(0);
+
+                    let history = &mut self.rgb_luma_history;
+                    history.push_back(luma);
+                    if history.len() > 5 {
+                        history.pop_front();
+                    }
+                    let sum_luma: u32 = history.iter().map(|&v| v as u32).sum();
+                    let avg_luma = sum_luma as f64 / history.len() as f64;
+                    let threshold = self.dark_luma_threshold as f64;
+
+                    let is_current_frame_dark = (luma as f64) < threshold;
+                    let is_avg_dark = avg_luma < threshold;
+
+                    self.last_rgb_face_luma = Some(RgbFaceLuma {
+                        mean: luma,
+                        rolling_mean: avg_luma,
+                        threshold: self.dark_luma_threshold,
+                    });
+
+                    tracing::debug!("Luma: {luma} avg_luma: {avg_luma}");
+
+                    if !is_current_frame_dark {
+                        CaptureStatus::Usable
+                    } else if is_avg_dark {
+                        CaptureStatus::TooDark
+                    } else {
+                        CaptureStatus::Ready
+                    }
+                } else {
+                    CaptureStatus::TooDark
+                }
+            } else {
+                CaptureStatus::Usable
+            }
+        };
+
+        Ok((
+            status,
+            Some(Self::build_capture_result(
+                frame,
+                Some((x1, y1, x2, y2)),
+                kps,
+                Some(mat_rgb),
+                yaw,
+                pitch,
+            )?),
+        ))
+    }
+
+    pub fn rgb_face_luma(&self) -> Option<RgbFaceLuma> {
+        self.last_rgb_face_luma
+    }
+}
+
+fn frame_is_too_dark(frame: &Mat, threshold: u8) -> bool {
+    frame_mean_luma(frame).unwrap_or(0) < threshold
+}
+
+pub fn frame_mean_luma(frame: &Mat) -> anyhow::Result<u8> {
+    let size = frame.size()?;
+    let pixel_count = (size.width.max(0) * size.height.max(0)) as usize;
+    if pixel_count == 0 {
+        return Ok(0);
+    }
+
+    let channels = frame.channels() as usize;
+    if channels == 0 {
+        return Ok(0);
+    }
+
+    let bytes = frame.data_bytes()?;
+    let total: u64 = bytes
+        .chunks_exact(channels)
+        .take(pixel_count)
+        .map(|pixel| {
+            let luminance = if channels >= 3 {
+                let b = pixel[0] as u32;
+                let g = pixel[1] as u32;
+                let r = pixel[2] as u32;
+                (77 * r + 150 * g + 29 * b) >> 8
+            } else {
+                pixel.iter().map(|&v| v as u32).sum::<u32>() / channels as u32
+            };
+            luminance as u64
+        })
+        .sum();
+
+    let mean = total / pixel_count as u64;
+    Ok(mean as u8)
+}
+
+fn clamp_bbox(frame: &Mat, bbox: (f32, f32, f32, f32)) -> opencv::core::Rect {
+    let (x1, y1, x2, y2) = bbox;
+    let w = frame.cols();
+    let h = frame.rows();
+    let xi1 = (x1.max(0.0) as i32).min(w.saturating_sub(1));
+    let yi1 = (y1.max(0.0) as i32).min(h.saturating_sub(1));
+    let xi2 = (x2.max(0.0) as i32).min(w);
+    let yi2 = (y2.max(0.0) as i32).min(h);
+    opencv::core::Rect::new(xi1, yi1, (xi2 - xi1).max(0), (yi2 - yi1).max(0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opencv::core::{self, Scalar};
+
+    #[test]
+    fn dark_frame_detection_rejects_black_frames() {
+        let frame =
+            Mat::new_rows_cols_with_default(12, 12, core::CV_8UC3, Scalar::all(0.0)).unwrap();
+
+        assert!(frame_mean_luma(&frame).unwrap() < 30);
+    }
+
+    #[test]
+    fn dark_gate_rejects_a_dark_rgb_frame_before_detection() {
+        let black = Mat::new_rows_cols_with_default(8, 8, core::CV_8UC3, Scalar::all(0.0)).unwrap();
+        assert_eq!(
+            FaceChecker::dark_gate(Spectrum::Rgb, 20, &black),
+            Some(CaptureStatus::TooDark)
+        );
+    }
+
+    #[test]
+    fn dark_gate_passes_a_lit_rgb_frame_through_to_detection() {
+        let lit = Mat::new_rows_cols_with_default(8, 8, core::CV_8UC3, Scalar::all(120.0)).unwrap();
+        assert_eq!(FaceChecker::dark_gate(Spectrum::Rgb, 20, &lit), None);
+    }
+
+    #[test]
+    fn dark_gate_never_rejects_an_ir_frame() {
+        let black = Mat::new_rows_cols_with_default(8, 8, core::CV_8UC3, Scalar::all(0.0)).unwrap();
+        assert_eq!(FaceChecker::dark_gate(Spectrum::Ir, 20, &black), None);
+    }
+
+    #[test]
+    fn blackout_frames_read_as_too_dark_while_lit_ones_do_not() {
+        let black = Mat::new_rows_cols_with_default(8, 8, core::CV_8UC3, Scalar::all(0.0)).unwrap();
+        let lit = Mat::new_rows_cols_with_default(8, 8, core::CV_8UC3, Scalar::all(120.0)).unwrap();
+
+        assert!(frame_is_too_dark(&black, 30));
+        assert!(!frame_is_too_dark(&lit, 30));
+    }
+
+    #[test]
+    fn dark_frame_detection_accepts_lit_frames() {
+        let frame =
+            Mat::new_rows_cols_with_default(12, 12, core::CV_8UC3, Scalar::all(120.0)).unwrap();
+
+        assert!(frame_mean_luma(&frame).unwrap() >= 30);
+    }
+
+    #[test]
+    fn mean_luminance_threshold_is_an_exclusive_lower_bound() {
+        let frame =
+            Mat::new_rows_cols_with_default(8, 8, core::CV_8UC3, Scalar::all(50.0)).unwrap();
+
+        assert!(frame_mean_luma(&frame).unwrap() < 51);
+        assert!(frame_mean_luma(&frame).unwrap() >= 50);
+    }
+
+    #[test]
+    fn mean_uses_bt601_weighting() {
+        let blue =
+            Mat::new_rows_cols_with_default(8, 8, core::CV_8UC3, Scalar::new(255.0, 0.0, 0.0, 0.0))
+                .unwrap();
+        assert!(frame_mean_luma(&blue).unwrap() < 30);
+
+        let green =
+            Mat::new_rows_cols_with_default(8, 8, core::CV_8UC3, Scalar::new(0.0, 255.0, 0.0, 0.0))
+                .unwrap();
+        assert!(frame_mean_luma(&green).unwrap() >= 30);
+    }
+
+    #[test]
+    fn single_channel_frames_use_raw_luminance() {
+        let dark = Mat::new_rows_cols_with_default(8, 8, core::CV_8UC1, Scalar::all(5.0)).unwrap();
+        assert!(frame_mean_luma(&dark).unwrap() < 30);
+
+        let lit = Mat::new_rows_cols_with_default(8, 8, core::CV_8UC1, Scalar::all(120.0)).unwrap();
+        assert!(frame_mean_luma(&lit).unwrap() >= 30);
+    }
+
+    #[test]
+    fn mean_is_robust_to_a_few_bright_pixels() {
+        let mut frame =
+            Mat::new_rows_cols_with_default(8, 8, core::CV_8UC3, Scalar::all(0.0)).unwrap();
+        {
+            let mut top = Mat::roi_mut(&mut frame, core::Rect::new(0, 0, 4, 1)).unwrap();
+            top.set_to_def(&Scalar::all(255.0)).unwrap();
+        }
+        assert!(frame_mean_luma(&frame).unwrap() < 30);
+    }
+
+    #[test]
+    fn empty_frame_is_treated_as_dark() {
+        let frame = Mat::default();
+        assert!(frame_mean_luma(&frame).unwrap_or(0) < 30);
+    }
+
+    #[test]
+    fn clipping_uses_landscape_content_bounds_inside_square_padding() {
+        assert!(bbox_is_clipped((300.0, 85.0, 380.0, 200.0), 640.0, 480.0));
+        assert!(bbox_is_clipped((300.0, 400.0, 380.0, 555.0), 640.0, 480.0));
+        assert!(!bbox_is_clipped((300.0, 250.0, 380.0, 380.0), 640.0, 480.0));
+    }
+
+    #[test]
+    fn clipping_uses_portrait_content_bounds_inside_square_padding() {
+        assert!(bbox_is_clipped((85.0, 300.0, 200.0, 380.0), 480.0, 640.0));
+        assert!(!bbox_is_clipped((250.0, 300.0, 380.0, 380.0), 480.0, 640.0));
+    }
+
+    #[test]
+    fn clipping_checks_square_frame_edges_without_padding() {
+        assert!(bbox_is_clipped((10.0, 200.0, 300.0, 400.0), 480.0, 480.0));
+        assert!(!bbox_is_clipped((100.0, 200.0, 300.0, 400.0), 480.0, 480.0));
+    }
+
+    #[test]
+    fn geometry_uses_square_detector_axes_for_centering() {
+        assert_eq!(
+            geometry_status((240.0, 240.0, 400.0, 400.0), 640.0, 480.0, true, 0.25),
+            None
+        );
+        assert_eq!(
+            geometry_status((240.0, 240.0, 400.0, 400.0), 480.0, 640.0, true, 0.25),
+            None
+        );
+        assert_eq!(
+            geometry_status((400.0, 240.0, 560.0, 400.0), 640.0, 480.0, true, 0.25),
+            Some(CaptureStatus::NotCentered)
+        );
+    }
+
+    #[test]
+    fn geometry_uses_the_configured_lower_face_size_threshold() {
+        assert_eq!(
+            geometry_status((375.0, 375.0, 625.0, 625.0), 1000.0, 1000.0, true, 0.25),
+            None
+        );
+        assert_eq!(
+            geometry_status((380.0, 380.0, 620.0, 620.0), 1000.0, 1000.0, true, 0.25),
+            Some(CaptureStatus::TooFar)
+        );
+        assert_eq!(
+            geometry_status((380.0, 380.0, 620.0, 620.0), 1000.0, 1000.0, true, 0.20),
+            None
+        );
+        assert_eq!(
+            geometry_status((105.0, 105.0, 895.0, 895.0), 1000.0, 1000.0, true, 0.25),
+            Some(CaptureStatus::TooClose)
+        );
+    }
+
+    #[test]
+    fn authentication_skips_centering_and_proximity_but_still_rejects_clipping() {
+        assert_eq!(
+            geometry_status((400.0, 240.0, 560.0, 400.0), 640.0, 480.0, false, 0.25),
+            None
+        );
+        assert_eq!(
+            geometry_status((300.0, 85.0, 380.0, 200.0), 640.0, 480.0, false, 0.25),
+            Some(CaptureStatus::Clipped)
+        );
+    }
+
+    #[test]
+    fn poisoned_detector_style_lock_recovers_the_inner_value() {
+        let value = std::sync::Arc::new(Mutex::new(1_u8));
+        let poison = value.clone();
+        let _ = std::thread::spawn(move || {
+            let mut guard = poison.lock().unwrap();
+            *guard = 2;
+            panic!("poison lock");
+        })
+        .join();
+
+        assert_eq!(*lock_recover(&value), 2);
+    }
+
+    fn landmarks(points: [(f32, f32); 5]) -> ndarray::Array3<f32> {
+        ndarray::Array3::from_shape_fn((1, 5, 2), |(_, point, axis)| {
+            if axis == 0 {
+                points[point].0
+            } else {
+                points[point].1
+            }
+        })
+    }
+
+    #[test]
+    fn head_pose_is_invariant_to_roll() {
+        let level_points = [
+            (10.0, 10.0),
+            (30.0, 10.0),
+            (22.0, 20.0),
+            (14.0, 30.0),
+            (26.0, 30.0),
+        ];
+        let level = landmarks(level_points);
+        let angle = std::f32::consts::FRAC_PI_4;
+        let (sin, cos) = angle.sin_cos();
+        let rolled = landmarks(level_points.map(|(x, y)| {
+            let (dx, dy) = (x - 20.0, y - 10.0);
+            (20.0 + dx * cos - dy * sin, 10.0 + dx * sin + dy * cos)
+        }));
+
+        let level_pose = estimate_head_pose(&level).unwrap();
+        let rolled_pose = estimate_head_pose(&rolled).unwrap();
+        assert!((level_pose.0 - rolled_pose.0).abs() < 0.001);
+        assert!((level_pose.1 - rolled_pose.1).abs() < 0.001);
+    }
+
+    #[test]
+    fn head_pose_rejects_degenerate_landmarks() {
+        let coincident_eyes = landmarks([
+            (10.0, 10.0),
+            (10.0, 10.0),
+            (10.0, 20.0),
+            (5.0, 30.0),
+            (15.0, 30.0),
+        ]);
+        assert!(estimate_head_pose(&coincident_eyes).is_none());
+
+        let malformed = ndarray::Array3::zeros((1, 4, 2));
+        assert!(estimate_head_pose(&malformed).is_none());
+    }
+
+    fn gate_frame(luma: f64) -> Mat {
+        Mat::new_rows_cols_with_default(8, 8, core::CV_8UC1, Scalar::all(luma)).unwrap()
+    }
+
+    #[test]
+    fn dark_frame_gate_passes_lit_frames() {
+        let mut gate = IrDarkFrameGate::new(30);
+        assert_eq!(gate.classify(&gate_frame(120.0)), IrFrameKind::Lit);
+        assert_eq!(gate.classify(&gate_frame(30.0)), IrFrameKind::Lit);
+    }
+
+    #[test]
+    fn dark_frame_gate_skips_strobe_gaps_without_reporting_dark() {
+        let mut gate = IrDarkFrameGate::new(30);
+        for _ in 0..20 {
+            assert_eq!(gate.classify(&gate_frame(2.0)), IrFrameKind::StrobeDark);
+            assert_eq!(gate.classify(&gate_frame(120.0)), IrFrameKind::Lit);
+        }
+    }
+
+    #[test]
+    fn dark_frame_gate_reports_a_sustained_dark_stream() {
+        let mut gate = IrDarkFrameGate::new(30);
+        for _ in 0..7 {
+            assert_eq!(gate.classify(&gate_frame(2.0)), IrFrameKind::StrobeDark);
+        }
+        assert_eq!(gate.classify(&gate_frame(2.0)), IrFrameKind::EmitterDark);
+        assert_eq!(gate.classify(&gate_frame(2.0)), IrFrameKind::EmitterDark);
+        assert_eq!(gate.classify(&gate_frame(120.0)), IrFrameKind::Lit);
+        assert_eq!(gate.classify(&gate_frame(2.0)), IrFrameKind::StrobeDark);
+    }
+
+    #[test]
+    fn rgb_warmup_gate_passes_lit_frames() {
+        let mut gate = RgbWarmupGate::new(30);
+        assert_eq!(
+            gate.classify_with_luma(&gate_frame(120.0)).0,
+            RgbFrameKind::Lit
+        );
+        assert_eq!(
+            gate.classify_with_luma(&gate_frame(30.0)).0,
+            RgbFrameKind::Lit
+        );
+    }
+
+    fn frame_at(offset_ms: u64) -> std::time::Duration {
+        std::time::Duration::from_millis(offset_ms)
+    }
+
+    #[test]
+    fn rgb_warmup_gate_holds_dark_frames_while_the_sensor_brightens() {
+        let mut gate = RgbWarmupGate::new(30);
+        let start = std::time::Instant::now();
+
+        for step in 0..20u64 {
+            assert_eq!(
+                gate.classify_luma(step as u8, start + frame_at(step * 60)),
+                RgbFrameKind::WarmupDark
+            );
+        }
+        assert_eq!(
+            gate.classify_luma(120, start + frame_at(1300)),
+            RgbFrameKind::Lit
+        );
+    }
+
+    #[test]
+    fn rgb_warmup_gate_gives_a_stream_that_never_brightens_no_grace() {
+        let mut gate = RgbWarmupGate::new(30);
+        let start = std::time::Instant::now();
+
+        for step in 0..16u64 {
+            assert_eq!(
+                gate.classify_luma(0, start + frame_at(step * 60)),
+                RgbFrameKind::WarmupDark
+            );
+        }
+        assert_eq!(
+            gate.classify_luma(0, start + RgbWarmupGate::TREND_GRACE),
+            RgbFrameKind::SteadyDark
+        );
+    }
+
+    #[test]
+    fn rgb_warmup_gate_waits_for_enough_frames_before_calling_a_stream_flat() {
+        let mut gate = RgbWarmupGate::new(30);
+        let start = std::time::Instant::now();
+
+        assert_eq!(gate.classify_luma(0, start), RgbFrameKind::WarmupDark);
+        assert_eq!(
+            gate.classify_luma(0, start + RgbWarmupGate::TREND_GRACE),
+            RgbFrameKind::WarmupDark
+        );
+    }
+
+    #[test]
+    fn rgb_warmup_gate_reports_a_brightening_stream_that_never_arrives() {
+        let mut gate = RgbWarmupGate::new(30);
+        let start = std::time::Instant::now();
+
+        for step in 0..20u64 {
+            assert_eq!(
+                gate.classify_luma(step as u8, start + frame_at(step * 60)),
+                RgbFrameKind::WarmupDark
+            );
+        }
+        assert_eq!(
+            gate.classify_luma(20, start + RgbWarmupGate::WARMUP),
+            RgbFrameKind::SettledDark
+        );
+    }
+
+    #[test]
+    fn rgb_warmup_gate_spends_its_grace_on_the_first_lit_frame() {
+        let mut gate = RgbWarmupGate::new(30);
+        let start = std::time::Instant::now();
+
+        assert_eq!(gate.classify_luma(120, start), RgbFrameKind::Lit);
+        assert_eq!(gate.classify_luma(2, start), RgbFrameKind::SteadyDark);
+    }
+
+    #[test]
+    fn rgb_warmup_gate_times_the_grace_from_the_first_frame() {
+        let mut gate = RgbWarmupGate::new(30);
+        let first_frame = std::time::Instant::now() + frame_at(10_000);
+
+        for step in 0..20u64 {
+            assert_eq!(
+                gate.classify_luma(step as u8, first_frame + frame_at(step * 60)),
+                RgbFrameKind::WarmupDark
+            );
+        }
+    }
+
+    #[test]
+    fn enrollment_pose_stability_accepts_a_held_pose() {
+        let mut stability = EnrollmentPoseStability::default();
+        assert!(!stability.update(EnrollPrompt::LookStraight, -0.50, 0.48));
+        assert!(stability.update(EnrollPrompt::LookStraight, -0.54, 0.49));
+    }
+
+    #[test]
+    fn enrollment_pose_stability_rejects_motion_and_resets() {
+        let mut stability = EnrollmentPoseStability::default();
+        for (yaw, pitch) in [(-0.10, 0.51), (-0.20, 0.50), (-0.30, 0.49)] {
+            assert!(!stability.update(EnrollPrompt::LookStraight, yaw, pitch));
+        }
+        assert!(!stability.update(EnrollPrompt::LookStraight, f32::NAN, 0.49));
+        assert!(!stability.update(EnrollPrompt::LookStraight, -0.50, 0.48));
+        assert!(stability.update(EnrollPrompt::LookStraight, -0.52, 0.49));
+    }
+
+    #[test]
+    fn enrollment_pose_stability_ignores_motion_on_the_prompted_axis() {
+        let mut stability = EnrollmentPoseStability::default();
+        assert!(!stability.update(EnrollPrompt::LookRight, 0.10, 0.50));
+        assert!(stability.update(EnrollPrompt::LookRight, 0.30, 0.52));
+
+        stability.reset();
+        assert!(!stability.update(EnrollPrompt::LookUp, 0.02, 0.50));
+        assert!(stability.update(EnrollPrompt::LookUp, 0.04, 0.30));
+
+        stability.reset();
+        assert!(!stability.update(EnrollPrompt::LookRight, 0.10, 0.40));
+        assert!(!stability.update(EnrollPrompt::LookRight, 0.30, 0.50));
+
+        stability.reset();
+        assert!(!stability.update(EnrollPrompt::LookUp, -0.10, 0.50));
+        assert!(!stability.update(EnrollPrompt::LookUp, 0.10, 0.30));
+    }
+
+    #[test]
+    fn enrollment_pose_directions_are_relative_to_straight() {
+        let baseline = Some((0.08, 0.62));
+        assert!(enrollment_pose_matches(
+            EnrollPrompt::LookLeft,
+            -0.10,
+            0.62,
+            baseline
+        ));
+        assert!(enrollment_pose_matches(
+            EnrollPrompt::LookRight,
+            0.26,
+            0.62,
+            baseline
+        ));
+        assert!(enrollment_pose_matches(
+            EnrollPrompt::LookUp,
+            0.08,
+            0.52,
+            baseline
+        ));
+        assert!(enrollment_pose_matches(
+            EnrollPrompt::LookDown,
+            0.08,
+            0.72,
+            baseline
+        ));
+        assert!(!enrollment_pose_matches(
+            EnrollPrompt::LookLeft,
+            0.01,
+            0.62,
+            baseline
+        ));
+        assert!(!enrollment_pose_matches(
+            EnrollPrompt::LookRight,
+            0.19,
+            0.62,
+            baseline
+        ));
+    }
+
+    #[test]
+    fn enrollment_straight_pose_rejects_invalid_geometry() {
+        assert!(enrollment_pose_matches(
+            EnrollPrompt::LookStraight,
+            0.1,
+            0.3,
+            None
+        ));
+        assert!(!enrollment_pose_matches(
+            EnrollPrompt::LookStraight,
+            f32::NAN,
+            0.5,
+            None
+        ));
+        assert!(!enrollment_pose_matches(
+            EnrollPrompt::LookStraight,
+            0.0,
+            0.9,
+            None
+        ));
+    }
+}

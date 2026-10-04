@@ -3,13 +3,21 @@
 
 # CLI Guide
 
-Use the `gaze` command for enrollment, testing, and managing face profiles.
+The `gaze` command lets you enroll and manage face profiles, test authentication,
+and check your installation.
 
 All commands talk to the running `gazed` daemon over DBus.
 
 ## Commands that need privileges
 
-An enrolled face is a login credential, so creating, changing, or deleting one requires root, even on your own account. You never type `sudo` yourself: `gaze add-face`, `gaze refine-face`, `gaze remove-face`, `gaze rename-face`, `gaze clear-user`, `gaze config`, and `gaze keyring` re-run themselves through `sudo` and prompt for your password. They still act on the account that invoked them, not on `root`, so `gaze add-face default` enrolls a face for you; pass `-u root` if you really want root's own enrollment.
+An enrolled face is a login credential, so creating, changing, or deleting one
+requires root privileges, even for your own account. You do not need to run
+`sudo` yourself: commands such as `gaze add-face`, `gaze refine-face`,
+`gaze remove-face`, `gaze rename-face`, `gaze clear-user`, `gaze config`, and
+`gaze keyring` request elevated privileges and prompt for your password when
+needed. They still act on the account that invoked them, not on `root`, so
+`gaze add-face default` enrolls a face for you. To manage root's enrollment,
+pass `-u root`.
 
 `gaze auth`, `gaze list-faces`, `gaze doctor`, and `gaze config --show` are read-only and stay unprivileged.
 
@@ -162,9 +170,21 @@ An RGB-only machine therefore shows a green `[RGB]` and a grey `[IR]`, not a fai
 gaze clear-user
 ```
 
-This is destructive.
+This permanently removes all face profiles for the current user.
 
-## Unlock the GNOME Keyring after a GDM face login
+## Check or clear a duress lockout
+
+When [duress detection](./configuration.md#duress-signal) locks face
+authentication, a password login re-enables it. To check or clear it by hand:
+
+```bash
+gaze duress          # show whether face auth is locked
+gaze duress --clear  # re-enable face auth
+```
+
+Clearing another user's lockout needs root.
+
+## Unlock the GNOME Keyring after a GDM or greetd face login
 
 A face login supplies no password, so the GNOME login keyring normally stays
 locked. `gaze keyring` stores the account password in a root-only TPM-protected

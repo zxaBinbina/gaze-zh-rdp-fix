@@ -1,6 +1,6 @@
 # Gaze 中文 PAM 提示与 KRDP 登录修复
 
-基于 [gundulabs/gaze v0.3.5](https://github.com/gundulabs/gaze/tree/v0.3.5) 的源码分支，包含 PAM 认证提示汉化，以及 KDE 远程桌面登录时跳过本机人脸扫描的修复。
+基于 [gundulabs/gaze v0.3.7](https://github.com/gundulabs/gaze/tree/v0.3.7) 的源码分支，包含 PAM 认证提示汉化，以及 KDE 远程桌面登录时跳过本机人脸扫描的修复。
 
 本项目独立于远程桌面网页认证项目，可单独查看、构建或提取补丁。源代码已经应用下面两份补丁，不需要再次应用。
 
@@ -10,7 +10,7 @@
 
 将 PAM 层面向用户的提示改为中文，包括看向摄像头、输入密码、人脸已验证、未识别到人脸、光线不足、超时以及钥匙环解锁提示；同步调整相关测试。
 
-汉化范围集中在 `pam-gaze/src/auth.rs` 和 `pam-gaze/src/core.rs` 的认证交互提示。Gaze 的 GUI、CLI 和上游文档不属于本次完整汉化范围。
+汉化范围集中在 `crates/pam-gaze/src/auth.rs` 和 `crates/pam-gaze/src/core.rs` 的认证交互提示。Gaze 的 GUI、CLI 和上游文档不属于本次完整汉化范围。
 
 ### KRDP 远程登录修复
 
@@ -22,15 +22,15 @@
 
 | 文件 | 说明 |
 | --- | --- |
-| `pam-gaze/src/auth.rs`、`pam-gaze/src/core.rs` | 已应用汉化和修复的源文件 |
-| `patches/0001-zh-cn-pam.patch` | 相对上游 v0.3.5 的中文 PAM 提示补丁 |
+| `crates/pam-gaze/src/auth.rs`、`crates/pam-gaze/src/core.rs` | 已应用汉化和修复的源文件 |
+| `patches/0001-zh-cn-pam.patch` | 相对上游 v0.3.7 的中文 PAM 提示补丁 |
 | `patches/0002-krdp-skip-face-auth.patch` | 在第一份补丁之后应用的 KRDP 修复 |
 | `patches/series` | 补丁应用顺序 |
 | `UPSTREAM.json` | 上游地址、精确提交和许可证 |
 | `docs/upstream-readme.md` | 原始上游项目介绍 |
 | `LICENSE` | 上游 GPL 许可证全文 |
 
-仓库保留上游 Rust 工作区、依赖锁文件、打包和构建脚本；不包含本机人脸数据、PAM 配置、账户密码、旧二进制、Git 历史、下载的编译依赖或 `target/` 目录。上游发布工作流未复制，避免新仓库误用原项目的发布配置。
+仓库保留上游 Git 历史、Rust 工作区、依赖锁文件、打包、构建脚本及工作流；Rust 源码位于 `crates/` 目录。
 
 ## 构建与测试
 
@@ -44,11 +44,11 @@ cargo test --locked -p pam-gaze
 
 其他发行版请安装对应的 PAM 开发包，例如 Debian/Ubuntu 的 `libpam0g-dev`。构建产物为 `target/release/libpam_gaze.so`。如果要构建整个 Gaze，请参考[上游构建说明](https://gaze.gundulabs.com/guide/development)与仓库 `Justfile`，其他组件可能需要额外依赖。
 
-本次补丁开发时，PAM 模块的 74 项测试通过；导出时再次校验了两份补丁按顺序应用到上游基线后，与本项目两个修改后的 Rust 文件逐字节一致。
+两份补丁已同步到 `UPSTREAM.json` 记录的上游提交；按顺序应用后，与本项目两个修改后的 Rust 文件逐字节一致。
 
 ## 安装到已经运行 Gaze 的主机
 
-以下针对 Fedora x86_64，假设已有兼容的 Gaze v0.3.5 和正常的 PAM 配置。PAM 属于登录组件，替换前请保留一个可用的管理员终端，并备份现有模块。示例不修改系统 PAM 策略，也不安装整套 Gaze。
+以下针对 Fedora x86_64，假设已有兼容的 Gaze v0.3.7 和正常的 PAM 配置。PAM 属于登录组件，替换前请保留一个可用的管理员终端，并备份现有模块。示例不修改系统 PAM 策略，也不安装整套 Gaze。
 
 ```bash
 gaze_backup_dir="/var/backups/gaze-zh-rdp-$(date +%Y%m%d-%H%M%S)"
@@ -64,7 +64,7 @@ sudo restorecon -F /usr/lib64/security/pam_gaze.so
 
 ## 将补丁应用到上游源码
 
-从上游检出 `UPSTREAM.json` 记录的 v0.3.5 提交，在该上游工作区中按顺序执行：
+从上游检出 `UPSTREAM.json` 记录的精确提交（基于 v0.3.7），在该上游工作区中按顺序执行：
 
 ```bash
 git apply /path/to/gaze-zh-rdp/patches/0001-zh-cn-pam.patch

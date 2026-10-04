@@ -38,6 +38,7 @@ Gaze is licensed under the [GNU General Public License, version 3 or later](http
 
 - Do not copy code into Gaze from projects under a license that is incompatible with GPLv3, and do not add dependencies that cannot be distributed alongside GPLv3 code. `just audit` does not check licenses, so check the license of any new dependency yourself.
 - New crate manifests inherit the license from the workspace with `license.workspace = true`; new packaging files must declare `GPL-3.0-or-later`.
+- Declare dependency versions once in the root `Cargo.toml` under `[workspace.dependencies]`, then use `name.workspace = true` in the crate and add only the features that crate needs.
 
 ## Local setup
 
@@ -181,7 +182,8 @@ bun run docs:build
 | Feature request | A new capability, config key, desktop integration, or distribution. |
 | Documentation | Docs that are wrong, missing, outdated, or unclear. |
 
-The forms ask for what we would otherwise have to come back and ask for, which is the slowest part of resolving a report. Every field exists because a past issue stalled without it.
+Please fill in the details the form asks for. Having your setup and logs up front
+helps us spend less time asking follow-up questions.
 
 ### What a bug report needs
 
@@ -194,6 +196,7 @@ The bug form collects all of this, but if you are adding to an existing issue, t
 - Which surfaces are affected, and which ones work. A face match that succeeds under `gaze auth` and fails at a greeter points somewhere very different from one that fails everywhere.
 - For camera, IR, or recognition problems: `gaze config --show`, `gaze auth --verbose`, and the camera's vendor and model IDs from `udevadm info -q property -n /dev/video0`. Those IDs are what tell us whether your hardware needs a dedicated IR-emitter profile.
 - For KDE: `gaze-kde-pam status` and your PAM stacks. On Fedora the vendor copy lives under `/usr/lib/pam.d` and only appears in `/etc/pam.d` once something has customized it, so include both paths.
+- For Omarchy: `gaze-omarchy doctor`, `omarchy-shell lock status`, and `/etc/pam.d/gaze-omarchy-face`.
 - Whether you have run `gaze uninstall` at any point. It deliberately removes `/etc/gaze/config.toml`, so a reinstall afterwards gives you a default config, which looks exactly like a bug that lost your settings.
 - Whether this ever worked, and the last version that did.
 
@@ -218,7 +221,9 @@ Include:
 
 ## AI-assisted contributions
 
-AI-assisted contributions are welcome and are reviewed on the same terms as any other. Using a model is not disqualifying. Not disclosing it is.
+AI-assisted contributions are welcome and reviewed on the same terms as any
+other. Please disclose when you have used a model so reviewers know which parts
+may need closer attention.
 
 Disclosure is required because it changes what a reviewer has to check. A human who misreads a PAM handle lifetime leaves traces in the surrounding reasoning that a reviewer can follow. A model that fabricates one produces a diff that reads correct all the way down, with confident comments explaining an invariant that was never true. Those need different kinds of attention, and in authentication code the difference matters.
 
@@ -229,13 +234,17 @@ The pull request template asks you to select one of:
 - **Generated.** AI produced most of the diff from your prompting. You reviewed all of it and understand it.
 - **Agentic.** An agent produced it largely on its own, with limited supervision.
 
-Name the tools you used, and say where the model helped and where you had to correct it. That last part is the most useful sentence in the section. Knowing that a model got the happy path right but invented the error handling tells a reviewer exactly where to look first.
+Name the tools you used and describe where the model helped, including anything
+you had to correct. For example, noting that it handled the happy path but
+invented error handling helps reviewers focus their attention.
 
 Whichever option applies, these hold:
 
-- **Never report a check or a test you did not run.** Every result in the pull request must come from actually running it on a real machine. Not predicted, not inferred from reading the code, and not reported to you by a tool. "Syntax-verified" and "tests in progress, will update" are not test results. A fabricated pass is worse than an admitted gap, because it spends reviewer trust that the next contributor needs.
-- **You are the author.** You should be able to explain why every change in the diff is there and defend it in review. If you cannot, the pull request is not ready, no matter how good the code looks.
+- **Report only checks and tests you actually ran.** Results should come from a real run, not from a prediction, code inspection, or a tool's report. "Syntax-verified" and "tests in progress, will update" are not test results. It is more helpful to describe an untested area than to report a pass that did not happen.
+- **Take responsibility for the contribution.** Be prepared to explain and defend every change in the diff. If there are parts you do not yet understand, take time to review them before opening the pull request.
 - **Respond to review yourself.** Feedback forwarded to a tool unread produces plausible replies to questions nobody asked.
 - **Respect licensing.** Do not paste proprietary, confidential, or license-incompatible code into an AI tool to produce a contribution, and make sure the output does not reproduce such code. The [licensing rules](#licensing) apply to generated code exactly as they do to written code.
 
-Unsolicited agent-generated pull requests opened against this repository without a human who has read the diff will be closed. Volume is not a contribution.
+We close agent-generated pull requests submitted without a human who has read
+and understands the diff. Please make sure a person has reviewed the changes
+before opening a pull request; volume alone is not helpful.

@@ -317,7 +317,8 @@ security.pam.services.login.gaze.enable = true; # console/display-manager login
 
 ### Uninstalling
 
-Don't use `gaze uninstall` on NixOS; it drives distro package managers.
+On NixOS, remove Gaze through your configuration rather than running
+`gaze uninstall`, which uses distribution package managers.
 Remove the module (or set `services.gaze.enable = false;`), rebuild, and
 delete the leftover state if you want a clean slate:
 
@@ -355,5 +356,5 @@ nix develop
 ```
 
 The shell provides the Rust toolchain and all native build inputs (OpenCV,
-GStreamer, GTK4, ONNX Runtime, tpm2-tss) with the `ORT_STRATEGY=system`
-environment already set, so `cargo build` works out of the box.
+GStreamer, GTK4, ONNX Runtime, tpm2-tss) with `GAZE_CPU_ORT_PATH` pointing
+`gazed` at the Nix ONNX Runtime, so `cargo build` works out of the box.

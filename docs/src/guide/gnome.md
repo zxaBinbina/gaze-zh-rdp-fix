@@ -3,28 +3,36 @@
 
 # GNOME Extension
 
-Gaze lock screen and GDM integration are GNOME-specific and require the `gaze-gnome-extension` package. The one-line installer tries to enable lock screen face unlock for the current GNOME user. Manual package installs only install the extension files. On openSUSE Tumbleweed, install the extension with `sudo zypper install gaze-gnome-extension` before enabling it.
+Gaze's lock screen and GDM integrations are specific to GNOME and are provided
+by the `gaze-gnome-extension` package. The one-line installer tries to enable
+lock screen face unlock for your current GNOME user. If you install packages
+manually, you will need to enable the extension yourself. On openSUSE Tumbleweed,
+first install it with `sudo zypper install gaze-gnome-extension`.
 
-This extension starts the `gdm-face` PAM service inside GNOME Shell authentication flows.
+This extension starts the `gdm-face` PAM service inside GNOME Shell authentication flows. It supports GNOME Shell 45 through 51.
 
-You do not need to enable this extension for the CLI, the GUI, or normal PAM prompts such as `sudo`. Leave it disabled on non-GNOME desktops.
+The extension is only needed for GNOME's lock screen and GDM flows. The CLI, GUI,
+and regular PAM prompts such as `sudo` work without it; if you use another desktop,
+you can leave the GNOME extension disabled.
 
 > [!IMPORTANT]
 > If you enable `require_confirmation_lock_screen = true` or `require_confirmation_elevation = true` in `/etc/gaze/config.toml`, this GNOME Shell Extension **must** be enabled for face-authorization confirmation to function inside GNOME's graphical PolKit prompts and on the lock screen / GDM login screen.
 >
-> **Why this is required:** Standard GNOME PolKit prompt windows and lock screen prompts do not natively allow clicking confirmation buttons with an empty or blank password field. The GNOME Shell Extension solves this by dynamically intercepting Gaze's confirmation signals, automatically hiding the password entry, and focusing the confirmation button (the native "Authenticate" button in PolKit and a dedicated "Confirm Face Unlock" button on the lock screen and GDM login dialog).
+> GNOME's prompts normally won't let you confirm with an empty password field. When Gaze asks for confirmation, the extension hides that field and focuses the **Authenticate** button in PolKit. On the lock screen and GDM login screen, it adds a **Confirm Face Unlock** button.
 >
 > If the extension is **inactive/disabled** under GNOME while either toggle is set, Gaze's PAM modules will **safely bypass confirmation** (returning success instantly upon face match) to prevent empty input hangs and user lockouts.
 
 ## Should I enable it?
 
-Enable it if you use GNOME and want face unlock from the lock screen.
+If you use GNOME and want face unlock on the lock screen, enable the extension.
 
-Do not enable it if you only want CLI/GUI enrollment, normal PAM authentication, or you are not using GNOME.
+Otherwise, you can leave it disabled: it is not needed for CLI or GUI enrollment,
+regular PAM authentication, or desktops other than GNOME.
 
 ## Enable the extension
 
-If the package is installed but the extension is not enabled yet, first reboot so GNOME Shell scans the newly installed extension. Then, from your GNOME session:
+After installing the package, reboot so GNOME Shell can discover the extension.
+Once you are back in your GNOME session, enable it with:
 
 ```bash
 gnome-extensions enable gaze@gundulabs.com
@@ -161,11 +169,11 @@ password leaves the keyring locked and requires a manual unlock and re-enrollmen
 
 ### What this changes about your security
 
-Read this before turning it on.
+Before enabling keyring unlock, review these security implications.
 
 - **The record is recoverable by root on this machine.** Sealing has no PCR
-  policy, so anyone who can run code as root here — including someone who boots
-  another OS from a USB stick against an unencrypted disk — can unseal the key
+  policy, so anyone who can run code as root here, including someone who boots
+  another OS from a USB stick against an unencrypted disk, can unseal the key
   and recover the plaintext password. It protects a *stolen disk*, not a machine
   someone else can boot. Enable full-disk encryption if that matters to you.
 - **The password becomes visible to the rest of the `gdm-face` stack.** Once

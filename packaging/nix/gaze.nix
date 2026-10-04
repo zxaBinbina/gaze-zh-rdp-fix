@@ -28,21 +28,15 @@ let
 in
 rustPlatform.buildRustPackage {
   pname = "gaze";
-  version = (builtins.fromTOML (builtins.readFile ../../gaze/Cargo.toml)).package.version;
+  version = (builtins.fromTOML (builtins.readFile ../../Cargo.toml)).workspace.package.version;
 
   src = lib.fileset.toSource {
     root = ../..;
     fileset = lib.fileset.unions [
       ../../Cargo.toml
       ../../Cargo.lock
-      ../../gaze
-      ../../gaze-cli
-      ../../gaze-core
-      ../../gaze-security
-      ../../gaze-vision
-      ../../gaze-gui
-      ../../pam-gaze
-      ../../pam-gaze-grosshack
+      ../../README.md
+      ../../crates
       ../../packaging/config
       ../../packaging/nix/nixos-module.nix
     ];
@@ -68,17 +62,10 @@ rustPlatform.buildRustPackage {
     tpm2-tss
   ];
 
-  env = {
-    # Link the nixpkgs ONNX Runtime instead of letting ort download one.
-    ORT_STRATEGY = "system";
-    ORT_LIB_LOCATION = "${lib.getLib onnxruntime}/lib";
-    ORT_PREFER_DYNAMIC_LINK = "1";
-  };
-
   # Two invocations keep gaze-vision's `detection` feature out of the clients.
   buildPhase = ''
     runHook preBuild
-    cargo build --release --offline -p gaze
+    cargo build --release --offline -p gazed
     cargo build --release --offline -p gaze-cli -p pam-gaze -p pam-gaze-grosshack
     runHook postBuild
   '';
@@ -102,7 +89,8 @@ rustPlatform.buildRustPackage {
   # registers the same plugin types again and the scanner rejects the duplicates.
   postFixup = ''
     wrapProgram $out/bin/gazed \
-      --set GST_PLUGIN_SYSTEM_PATH_1_0 "${gstPluginPath}"
+      --set GST_PLUGIN_SYSTEM_PATH_1_0 "${gstPluginPath}" \
+      --set GAZE_CPU_ORT_PATH "${lib.getLib onnxruntime}/lib/libonnxruntime.so"
     wrapProgram $out/bin/gaze \
       --set GST_PLUGIN_SYSTEM_PATH_1_0 "${gstPluginPath}"
   '';

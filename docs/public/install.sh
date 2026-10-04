@@ -10,6 +10,7 @@ set -e
 PKG_BASE_URL="https://packages.gundulabs.com"
 HYPRLAND_DOCS_URL="https://gaze.gundulabs.com/guide/hyprland"
 KDE_DOCS_URL="https://gaze.gundulabs.com/guide/kde"
+OMARCHY_DOCS_URL="https://gaze.gundulabs.com/guide/omarchy"
 PAM_DOCS_URL="https://gaze.gundulabs.com/guide/pam"
 PAM_SUDO_OPTOUT="/etc/gaze/pam-sudo.optout"
 REPO_KEY_FPR="505AC1C71AFEDBD5555235F6CB4FA24E5C1C7C98"
@@ -137,12 +138,17 @@ is_hyprland_session() {
     return 1
 }
 
+is_omarchy_session() {
+    is_hyprland_session && command -v omarchy >/dev/null 2>&1 &&
+        [ -f /usr/share/omarchy/shell/plugins/lock/manifest.json ]
+}
+
 has_hyprlock() {
     command -v hyprlock >/dev/null 2>&1
 }
 
 want_hyprlock_setup() {
-    is_hyprland_session || has_hyprlock
+    ! is_omarchy_session && { is_hyprland_session || has_hyprlock; }
 }
 
 print_manual_gnome_enable() {
@@ -491,11 +497,21 @@ enable_kde() {
     link "$KDE_DOCS_URL"
 }
 
+enable_omarchy() {
+    if [ "$(id -u)" -eq 0 ]; then
+        warn "Run gaze-omarchy enable as your desktop user after installation."
+    elif ! gaze-omarchy enable; then
+        warn "Omarchy integration needs attention; run gaze-omarchy doctor, then gaze-omarchy enable while unlocked."
+    fi
+}
+
 enable_desktop_integrations() {
     if want_gnome_extension_package; then
         enable_gnome_extension
     elif want_cinnamon_extension_package; then
         enable_cinnamon_extension
+    elif is_omarchy_session; then
+        enable_omarchy
     elif is_kde_session; then
         enable_kde
     else
@@ -778,21 +794,21 @@ is_arch() {
 
 supported_deb_suite() {
     case "$1" in
-    noble | questing | resolute | trixie | forky) return 0 ;;
+    noble | questing | resolute | stonking | trixie | forky) return 0 ;;
     esac
     return 1
 }
 
 supported_fedora_compatible_version() {
     case "$DISTRO_VERSION_ID" in
-    42 | 43 | 44) return 0 ;;
+    42 | 43 | 44 | 45) return 0 ;;
     esac
     return 1
 }
 
 if ! is_rpm && ! is_deb && ! is_arch; then
     fail "Unsupported distribution: $DISTRO_ID"
-    say "Supported: Ubuntu 24.04/25.10/26.04, Debian 13 and 14 (forky/testing), Fedora-compatible 42/43/44 systems (including rpm-ostree image-based distros like Silverblue, Bazzite, and Kinoite), openSUSE Tumbleweed, Arch Linux, and Arch-compatible AUR distros"
+    say "Supported: Ubuntu 24.04/25.10/26.04/26.10, Debian 13 and 14 (forky/testing), Fedora-compatible 42/43/44/45 systems (including rpm-ostree image-based distros like Silverblue, Bazzite, and Kinoite), openSUSE Tumbleweed, Arch Linux, and Arch-compatible AUR distros"
     exit 1
 fi
 
@@ -807,7 +823,7 @@ fi
 
 if is_deb && ! supported_deb_suite "$DISTRO_CODENAME"; then
     fail "Unsupported Debian/Ubuntu release: ${DISTRO_CODENAME:-unknown}"
-    say "Supported apt suites: noble, questing, resolute, trixie, forky"
+    say "Supported apt suites: noble, questing, resolute, stonking, trixie, forky"
     exit 1
 fi
 
@@ -819,7 +835,7 @@ fi
 
 if is_fedora_compatible && ! supported_fedora_compatible_version; then
     fail "Unsupported ${NAME:-Fedora-compatible distribution} version: ${DISTRO_VERSION_ID:-unknown}"
-    say "Fedora-compatible packages are currently available for versions 42, 43, and 44."
+    say "Fedora-compatible packages are currently available for versions 42, 43, 44, and 45."
     exit 1
 fi
 
@@ -943,6 +959,9 @@ elif is_arch; then
         plan "Install gaze-bin, gaze-gui-bin, and gaze-kde-bin from the AUR (hands-free KDE lock screen face unlock)"
     else
         plan "Install gaze-bin and gaze-gui-bin from the AUR (skip desktop extension; GNOME/Cinnamon not detected)"
+    fi
+    if is_omarchy_session; then
+        plan "Install gaze-omarchy-bin from the AUR and enable it for this user while unlocked"
     fi
     if want_hyprlock_setup; then
         plan "Install gaze-hyprlock-bin and configure hyprlock"
@@ -1150,6 +1169,9 @@ elif is_arch; then
     if want_cinnamon_extension_package; then
         AUR_PKGS="$AUR_PKGS gaze-cinnamon-extension-bin"
     fi
+    if is_omarchy_session; then
+        AUR_PKGS="$AUR_PKGS gaze-omarchy-bin"
+    fi
     if want_hyprlock_setup; then
         AUR_PKGS="$AUR_PKGS gaze-hyprlock-bin"
     fi
@@ -1185,11 +1207,13 @@ if want_gnome_extension_package; then
     say "  4. ${BOLD}Reboot${RESET}                 ${DIM}GNOME Shell and GDM only pick up the new extension at startup${RESET}"
 elif want_cinnamon_extension_package; then
     say "  4. ${BOLD}Restart Cinnamon${RESET}       ${DIM}Press Alt+F2, type r, and press Enter to reload Cinnamon${RESET}"
+elif is_omarchy_session; then
+    say "  4. ${BOLD}gaze-omarchy doctor${RESET}    ${DIM}check Omarchy lock integration after enrollment${RESET}"
 fi
 say ""
 title "Try it"
 say "  ${BOLD}gaze-gui${RESET}               ${DIM}open the settings app${RESET}"
-if want_gnome_extension_package || want_cinnamon_extension_package || is_kde_session || want_hyprlock_setup; then
+if want_gnome_extension_package || want_cinnamon_extension_package || is_kde_session || is_omarchy_session || want_hyprlock_setup; then
     say "  ${BOLD}Lock your screen${RESET}       ${DIM}then look at the camera${RESET}"
 fi
 say ""
@@ -1199,6 +1223,9 @@ if want_gnome_extension_package; then
     say "  GDM login face auth: off"
 elif want_cinnamon_extension_package; then
     ok "Cinnamon extension: enabled for this user"
+elif is_omarchy_session; then
+    say "  Run gaze-omarchy doctor to check lock integration."
+    link "$OMARCHY_DOCS_URL"
 elif is_kde_session; then
     if [ "${KDE_PACKAGES_INSTALLED:-0}" -eq 1 ]; then
         ok "KDE Plasma lock screen face unlock: gaze-kde installed"

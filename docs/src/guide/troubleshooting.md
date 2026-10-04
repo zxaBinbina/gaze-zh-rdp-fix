@@ -37,7 +37,7 @@ systemctl status gazed
 
 If the output says `active (running)`, this part is fine.
 
-Fix:
+To start and enable the service, run:
 
 ```bash
 sudo systemctl enable --now gazed
@@ -154,8 +154,9 @@ dpkg-query -W -f='${Version}\n' gaze
 grep gundulabs /etc/apt/sources.list.d/gundulabs.list
 ```
 
-The version suffix (`1~ubuntu24.04`, `1~ubuntu26.04`, `1~debian13`, `1~debian14`) has to match
-your release. Point apt at the suite for your release and reinstall:
+The version suffix (`1~ubuntu24.04`, `1~ubuntu25.10`, `1~ubuntu26.04`,
+`1~ubuntu26.10`, `1~debian13`, `1~debian14`) has to match your release. Point
+apt at the suite for your release and reinstall:
 
 ```bash
 suite="$(. /etc/os-release && echo "${VERSION_CODENAME:-$UBUNTU_CODENAME}")"
@@ -166,9 +167,9 @@ sudo apt install --reinstall gaze gaze-gui
 sudo systemctl restart gazed
 ```
 
-Do not symlink the newer OpenCV libraries to the missing soversions. The soname
-changes because the C++ ABI changed, so the daemon may start but can crash or
-corrupt data later.
+Avoid symlinking newer OpenCV libraries to the missing sonames. The soname
+changed because the C++ ABI changed, so the daemon might start but later crash
+or corrupt data.
 
 ## 2. Camera is not detected
 
@@ -205,7 +206,7 @@ sudo pacman -S gst-plugins-base gst-plugins-good gst-plugin-pipewire
 
 Then restart the daemon with `sudo systemctl restart gazed`.
 
-Use the primary GStreamer camera source first:
+As a first step, try the primary GStreamer camera source:
 
 ```toml
 [cameras]
@@ -221,9 +222,9 @@ rgb = "pipewiresrc target-object=<pipewire-target>"
 
 You can also point `rgb` at a camera directly with a `/dev/video*` node or a `usb:VVVV:PPPP` id, which name the kernel node outright.
 
-For authentication, the daemon always captures the kernel `/dev/video*` node directly and never needs a PipeWire session — not even on the GDM login screen. `rgb = "primary"` means the first color node; set `rgb` to a specific `/dev/video*` node or `usb:VVVV:PPPP` id if that picks the wrong camera. A `pipewiresrc target-object=` value is resolved to the V4L2 node behind that same camera.
+For authentication, the daemon always captures the kernel `/dev/video*` node directly and never needs a PipeWire session, not even on the GDM login screen. `rgb = "primary"` means the first color node; set `rgb` to a specific `/dev/video*` node or `usb:VVVV:PPPP` id if that picks the wrong camera. A `pipewiresrc target-object=` value is resolved to the V4L2 node behind that same camera.
 
-Then restart daemon:
+Restart the daemon to apply the camera change:
 
 ```bash
 sudo systemctl restart gazed
@@ -447,6 +448,20 @@ unless the greeter ships an up-front biometric service, starts only when the log
 form is submitted: press Enter with the password field empty, exactly as you would
 for a fingerprint reader there. See the [KDE Plasma guide](/guide/kde).
 
+### Omarchy
+
+Check the "Omarchy lock" line in `gaze doctor`, then from your unlocked desktop:
+
+```bash
+gaze-omarchy doctor
+gaze-omarchy enable
+```
+
+`gaze-omarchy doctor` reports which piece is missing: host compatibility, the
+`/etc/pam.d/gaze-omarchy-face` service, enrollment, or the running lock plugin.
+After an Omarchy update changes the shell files, face scans stop until
+`gaze-omarchy` is updated. See the [Omarchy guide](/guide/omarchy).
+
 ## 5. PAM auth flow seems broken
 
 Reinstall packages (recommended):
@@ -514,9 +529,8 @@ restore mail service before updating, disable Gaze in the shared stack with
 
 ## 6. First run is slow
 
-This is normal when models are downloaded initially.
-
-After first successful run, subsequent auth attempts should be faster.
+The first authentication may take a little longer while Gaze downloads the
+models. Later attempts should be faster.
 
 ## 7. Verify installed version and binaries
 
@@ -584,20 +598,15 @@ The requested API version [27] is not available, only API versions [1, 26] are s
 thread 'main' panicked at ort-2.0.0-rc.13/src/lib.rs: Failed to initialize ORT API
 ```
 
-The ONNX Runtime `gazed` links against is older than the ONNX Runtime API the
-build asks for. It only affects builds that link a system ONNX Runtime
-(`ORT_STRATEGY=system`), such as the Nix package, the Flatpak, and RPM source
-builds; the released `.deb`, `.rpm`, and Arch packages bundle their own runtime.
+The loaded ONNX Runtime is older than the API Gaze requests. Current builds
+validate API 21 before initialization and try the bundled CPU runtime if a
+registered vendor runtime is incompatible. Conventional packages bundle their
+CPU runtime; Nix uses a Nix-managed library.
 
-Gaze requires ONNX Runtime 1.21 or newer. Current builds report the mismatch and
-exit with an error instead of aborting:
-
-```
-the ONNX Runtime library loaded at startup is version 1.20.0, which is older than the 1.21.x this build of Gaze requires
-```
-
-Update `gazed` to a current release, or build it against an ONNX Runtime that is
-at least 1.21.
+Gaze requires ONNX Runtime 1.21 or newer. Update Gaze and its runtime package,
+or point `ORT_DYLIB_PATH` at a compatible vendor runtime and provide its
+`LD_LIBRARY_PATH`. For Intel or AMD acceleration, register a compatible SDK as
+described in [Hardware Acceleration](/guide/acceleration) and restart `gazed`.
 
 ## 12. Collect useful logs before asking for help
 
@@ -608,4 +617,4 @@ journalctl -u gazed -n 300 --no-pager
 gaze auth --verbose
 ```
 
-Include the complete `gaze doctor` output, distro version, and desktop environment (GNOME/KDE/etc.) when reporting issues. On KDE, add `gaze-kde-pam status` and the contents of `/etc/pam.d/kde-fingerprint`.
+Include the complete `gaze doctor` output, distro version, and desktop environment (GNOME/KDE/etc.) when reporting issues. On KDE, add `gaze-kde-pam status` and the contents of `/etc/pam.d/kde-fingerprint`. On Omarchy, add `gaze-omarchy doctor` and `omarchy-shell lock status`.

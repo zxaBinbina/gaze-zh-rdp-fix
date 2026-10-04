@@ -37,17 +37,30 @@ See [Building without a Linux host](#building-without-a-linux-host-docker).
 
 Install the tooling:
 
-- Rust 1.85+, via [rustup](https://rustup.rs)
+- Current stable Rust, via [rustup](https://rustup.rs). The locked GTK and GStreamer dependencies require Rust 1.92 or newer.
 - [`just`](https://github.com/casey/just) 1.51+, the task runner everything below goes through
+- [`cargo-audit`](https://github.com/RustSec/rustsec/tree/main/cargo-audit), for `just audit`
 - [`nfpm`](https://nfpm.goreleaser.com), only for `just package`
 - [`flatpak-builder`](https://github.com/flatpak/flatpak-builder), only for `just build-flatpak`
 
-CI pins its own versions in `.github/workflows/ci.yml` if you need to match them exactly. Then
-the system libraries:
+CI uses stable Rust and pins `just` in `.github/workflows/ci.yml`. Prepare the
+Rust tools for the required checks:
+
+```bash
+rustup update stable
+rustup default stable
+rustup component add rustfmt clippy
+cargo install just --locked
+cargo install cargo-audit --locked
+```
+
+Then install the system libraries. Runtime packages alone do not provide the
+headers and pkg-config files needed by `just lint` and `just test`:
 
 ::: code-group
 
 ```bash [Debian/Ubuntu]
+sudo apt update
 sudo apt install build-essential pkg-config clang libclang-dev \
   libopencv-dev libv4l-dev libpam0g-dev libtss2-dev libssl-dev \
   libgtk-4-dev libadwaita-1-dev \
@@ -104,7 +117,7 @@ Only `gaze-gui` needs gtk4 and libadwaita (`libgtk-4-dev`/`gtk4-devel`/`gtk4`,
 `libadwaita-1-dev`/`libadwaita-devel`/`libadwaita`, and on Debian/Ubuntu the
 cairo, glib, gdk-pixbuf, pango, and graphene headers listed with them). For a
 TUI-only checkout, set `GAZE_GUI=0` (also `false`, `no`, or `off`) and skip
-those packages: `build-rust`, `build-rust-openvino`, `test`, and `lint` then
+those packages: `build-rust`, `test`, and `lint` then
 leave `gaze-gui` out, and `dev-link-system` skips the binary it never built.
 The daemon, the `gaze` TUI, the CLI, and the PAM modules are unaffected. Like
 `OPENCV_PKGCONFIG_NAME`, this only covers those `just` recipes: a bare `cargo
@@ -128,14 +141,18 @@ Git hooks are local to each clone. `just setup-hooks` points Git at the tracked 
 
 ## Workspace layout
 
-- `gaze`: the `gazed` daemon, ML pipeline, and user database.
-- `gaze-cli`: the `gaze` CLI binary. It lives in its own crate so the client binary does not statically link ONNX Runtime (see warning below).
-- `gaze-core`: shared config/DBus/IR library. Deliberately light: no OpenCV, GStreamer, or ONNX Runtime, so the PAM modules can depend on it.
-- `gaze-security`: TPM sealing and the GNOME Keyring credential store. Links tpm2-tss plus pure-Rust crypto (`aes-gcm`, `sha2`) and nothing heavier, so `pam-gaze` can depend on it.
-- `gaze-vision`: camera capture, face detection, and inference. Detection sits behind the `detection` cargo feature (on by default); the CLI and GUI opt out with `default-features = false` and get camera support alone.
-- `pam-gaze`: `cdylib` PAM module. Depends on `gaze-core` and `gaze-security` for TPM keyring unsealing, never `gaze-vision`; `just check-pam-link` enforces its library allowlist (see warning below).
-- `pam-gaze-grosshack`: deprecated `cdylib` compatibility shim that forces `PamMode::Simultaneous` and prints a deprecation notice. It `#[path]`-includes `pam-gaze`'s own modules rather than duplicating them. Shipped on openSUSE only, and slated for removal; new work belongs in `pam-gaze`.
-- `gaze-gui`: GTK4/libadwaita app. `gnome-shell-extension/` and `cinnamon-extension/` are packaged separately.
+Rust packages live under `crates/`; desktop integration source lives under
+`integrations/`. Package definitions and installed system configuration live under
+`packaging/`. Run build, test, and packaging commands from the repository root.
+
+- `crates/gazed`: the `gazed` daemon, ML pipeline, and user database.
+- `crates/gaze-cli`: the `gaze` CLI binary. It lives in its own crate so the client binary does not statically link ONNX Runtime (see warning below).
+- `crates/gaze-core`: shared config/DBus/IR library. Deliberately light: no OpenCV, GStreamer, or ONNX Runtime, so the PAM modules can depend on it.
+- `crates/gaze-security`: TPM sealing and the GNOME Keyring credential store. Links tpm2-tss plus pure-Rust crypto (`aes-gcm`, `sha2`) and nothing heavier, so `pam-gaze` can depend on it.
+- `crates/gaze-vision`: camera capture, face detection, and inference. Detection sits behind the `detection` cargo feature. The workspace dependency turns default features off, so the CLI and GUI get camera support alone and only `gazed` enables `detection`.
+- `crates/pam-gaze`: `cdylib` PAM module. Depends on `gaze-core` and `gaze-security` for TPM keyring unsealing, never `gaze-vision`; `just check-pam-link` enforces its library allowlist (see warning below).
+- `crates/pam-gaze-grosshack`: deprecated `cdylib` compatibility shim that forces `PamMode::Simultaneous` and prints a deprecation notice. It `#[path]`-includes `pam-gaze`'s own modules rather than duplicating them. Every package still installs it so legacy PAM lines keep working, and it is slated for removal; new work belongs in `pam-gaze`.
+- `crates/gaze-gui`: GTK4/libadwaita app. Desktop integrations in `integrations/` are packaged separately.
 
 ## Build and test rust components
 
@@ -149,27 +166,22 @@ just check-pam-link    # check the PAM modules' shared-library footprint
 just fmt               # apply formatting (fmt-check only checks)
 ```
 
-The default build supports CPU inference only. To build the daemon and
-configuration tools with OpenVINO support, provide an OpenVINO-enabled system
-ONNX Runtime and run:
+The standard daemon includes both Intel OpenVINO and AMD Vitis AI adapters and
+loads ONNX Runtime dynamically at startup. `just build-rust` stages the pinned CPU
+runtime and its notices beside `gazed`; package builds install it under `/usr/lib/gaze`.
 
-```bash
-ORT_STRATEGY=system \
-ORT_LIB_LOCATION=/path/to/onnxruntime/lib \
-ORT_PREFER_DYNAMIC_LINK=1 \
-just build-rust-openvino
-```
-
-The `openvino` Cargo feature is explicit. The build fails when that feature is
-enabled without a matching ONNX Runtime library.
+Register vendor runtimes as described in [Hardware Acceleration](/guide/acceleration). To test a custom
+SDK without installing it, set `ORT_DYLIB_PATH` to its complete ONNX Runtime library
+and start the daemon with that SDK's `LD_LIBRARY_PATH`. Keep system-service libraries
+outside `/home` and `/root`, which `gazed.service` hides.
 
 ::: warning Keep the `api-21` feature on the `ort` dependency
-`gaze` and `gaze-vision` depend on `ort` with `default-features = false` and
+`gazed` and `gaze-vision` depend on `ort` with `default-features = false` and
 `api-21`, which pins the ONNX Runtime C API version the binaries ask for. `ort`
 defaults to the newest API its release targets, and a runtime older than that
 makes ONNX Runtime hand back a null API pointer, which `ort` turns into a panic
-during process teardown and a core dump. Anything that links a system runtime
-(Nix, Flatpak, RPM source builds, `ORT_STRATEGY=system` in CI) can be as old as
+during process teardown and a core dump. A runtime supplied from outside
+the pinned download (Nix, `ORT_DYLIB_PATH`, or a vendor SDK) can be as old as
 ONNX Runtime 1.21, so an `ort` upgrade must keep the `api-21` feature rather than
 inherit the new default. `gazed` also checks the loaded runtime before touching
 `ort`, and `gaze-vision`'s `inference::` tests fail against a runtime that is too
@@ -186,29 +198,14 @@ so staying on `api-21` keeps session creation on the path that installs the CPU
 provider directly.
 :::
 
-The OpenVINO-enabled binary supports Intel CPU, GPU, and NPU devices. The
-`device` value in `/etc/gaze/config.toml` selects the device at run time; GPU
-and NPU do not require separate builds. An installation with OpenVINO support
-should set `execution_provider = "openvino"` and `device = "npu"` in its
-installed configuration. If OpenVINO setup fails at run time, Gaze still falls
-back to the ONNX Runtime CPU provider.
-
-::: warning OpenVINO is a source build only
-The released `.deb`, `.rpm`, Arch, and Flatpak packages are all produced by
-`just build-rust`, so none of them include OpenVINO. Getting it means building
-from source with `just build-rust-openvino` against your own OpenVINO-enabled
-ONNX Runtime.
-:::
-
-CI does not cover the OpenVINO features either: `just lint`, `just test`, and
-`just build-rust` all build CPU-only. Run `just test-openvino`,
-`just lint-openvino`, and `just build-rust-openvino` by hand before changing
-anything behind the `openvino` or `openvino-config` features. `just test` does
-compile `gaze-core` with `openvino-config` alone, which is what the CLI and GUI
-ship with, but that path needs no OpenVINO runtime.
+`just lint` compiles both vendor adapters and `just test` exercises configuration,
+hardware discovery, runtime/API validation, and CPU fallback without NPU hardware.
+CI's test job then reruns the inference tests against Intel's OpenVINO runtime (`just test-openvino`). Actual NPU execution,
+model operator coverage, driver compatibility, and recognition/liveness precision need
+[hardware validation](/guide/acceleration#hardware-validation) on both vendors.
 
 ::: warning Build with `just build-rust`, not `cargo build --workspace`
-`just build-rust` builds the daemon and the clients in separate cargo invocations so feature unification cannot link ONNX Runtime into the CLI, GUI, or PAM modules. ONNX Runtime's startup code requires AVX2, and a single workspace build would silently reintroduce crashes on older CPUs.
+`just build-rust` builds the daemon and the clients in separate cargo invocations so feature unification cannot link ONNX Runtime into the CLI, GUI, or PAM modules. This keeps inference code out of the clients and PAM modules; the daemon checks CPU support before loading ONNX Runtime.
 :::
 
 ::: warning Never give the PAM modules a `gaze-vision` dependency
@@ -216,8 +213,8 @@ ship with, but that path needs no OpenVINO runtime.
 `common-auth`, including network services such as `sshd` and `dovecot`. Linking
 the vision stack there pulls in OpenCV, which pulls in OpenBLAS, whose ELF
 constructor reserves per-thread buffers sized for every core. Services that cap
-address space then abort on load: this broke IMAP authentication in
-[#607](https://github.com/GunduLabs/gaze/issues/607). A crate boundary, not a
+address space then abort on load, which has broken IMAP authentication before.
+A crate boundary, not a
 cargo feature, is what keeps this out, because features unify across packages
 built in one `cargo build` invocation. `just check-pam-link` verifies the built
 modules link only basic system libraries and, for the main PAM module, the TPM
@@ -331,11 +328,11 @@ sudo -v   # force a fresh PAM prompt
 
 ## Iterating on the GNOME extension
 
-The extension source lives in `gnome-shell-extension/`. To run it from the tree without packaging:
+The extension source lives in `integrations/gnome-shell/`. To run it from the tree without packaging:
 
 ```bash
 mkdir -p ~/.local/share/gnome-shell/extensions
-ln -sfn "$PWD/gnome-shell-extension" \
+ln -sfn "$PWD/integrations/gnome-shell" \
   ~/.local/share/gnome-shell/extensions/gaze@gundulabs.com
 
 # compile the gsettings schema once
@@ -354,14 +351,34 @@ journalctl -f /usr/bin/gnome-shell
 
 For the unlock-dialog session mode (lock screen), changes only take effect after a fresh lock, not a shell reload.
 
+## Testing GNOME Shell compatibility
+
+With Node.js 22 or newer, run:
+
+```bash
+node scripts/test-gnome.mjs
+```
+
+This downloads the GNOME Shell 45.0 through 51.0 authentication source and runs
+it with the Gaze extension. The tests cover face startup and eligibility,
+confirmation by keyboard and button, password fallback, cancellation, stale
+D-Bus replies, GNOME 51 retry modes, Polkit session handlers, and removal of
+extension hooks. CI runs the same command. To use downloaded sources without
+network access, pass a directory containing `45.0/js/` through `51.0/js/` from
+those releases.
+
+The harness simulates native widgets, GObject signals, and D-Bus. Test actual
+GDM login, lock screen unlock, and Polkit prompts in a GNOME desktop session
+before treating a new Shell release as fully verified.
+
 ## Iterating on the Cinnamon extension
 
-The extension source lives in `cinnamon-extension/`. Cinnamon reads its settings
+The extension source lives in `integrations/cinnamon/`. Cinnamon reads its settings
 schema from the extension directory, so no `glib-compile-schemas` step is needed:
 
 ```bash
 mkdir -p ~/.local/share/cinnamon/extensions
-ln -sfn "$PWD/cinnamon-extension" \
+ln -sfn "$PWD/integrations/cinnamon" \
   ~/.local/share/cinnamon/extensions/gaze@gundulabs.com
 ```
 
@@ -401,6 +418,29 @@ emulate re-arming after a wrong password:
 just kde-harness kde-fingerprint 2
 ```
 
+## Testing KDE PAM compatibility
+
+With Node.js 22.15 or newer, run:
+
+```bash
+node scripts/test-kde.mjs
+```
+
+This downloads the KDE lock screen and login greeter PAM stacks that each
+supported distribution ships (kscreenlocker, sddm, plasma-login-manager, and
+the base stacks they include) and runs `gaze-kde-pam` against them. Fedora runs
+twice, with the default authselect profile and with `with-fingerprint
+with-faillock`. The tests evaluate the edited stacks with Linux-PAM's dispatch
+rules and cover face unlock, account lockout and nologin gates, non-matches that
+must not count as failed logins, fingerprint readers keeping their own slot,
+password fallback at the login greeter, and byte-for-byte restoration on
+disable. CI runs the same command. To use downloaded sources without network
+access, pass a directory with one folder per target (such as `arch` or
+`fedora-44`) holding the files the script would otherwise download.
+
+PAM modules are simulated. Unlock an actual Plasma session, or use
+`just kde-harness`, before treating a distribution release as fully verified.
+
 ## Packaging
 
 ```bash
@@ -421,13 +461,11 @@ of truth. Build with:
 just build-flatpak
 ```
 
-This runs two `[private]` prep recipes first (`prepare-flatpak-vendor`, `prepare-flatpak-ort`),
-so the first run needs network access even though the sandboxed build itself is `--offline`:
+This runs a `[private]` prep recipe first (`prepare-flatpak-vendor`), so the first run needs
+network access even though the sandboxed build itself is `--offline`:
+`cargo vendor --locked --versioned-dirs` populates `.flatpak-cache/cargo` from crates.io.
 
-- `cargo vendor --locked --versioned-dirs` populates `.flatpak-cache/cargo` from crates.io.
-- It downloads the pinned ONNX Runtime release tarball into `.flatpak-cache/ort`.
-
-Both are cached under `.flatpak-cache/` (removed by `just clean`), so only the first build
+It is cached under `.flatpak-cache/` (removed by `just clean`), so only the first build
 per checkout pays the network/OpenCV-from-source cost; expect that first build to take a
 while, since OpenCV compiles from source inside the sandbox.
 

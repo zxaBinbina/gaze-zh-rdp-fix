@@ -4,12 +4,11 @@
 # GUI Guide
 
 ::: tip On KDE Plasma
-`gaze-kde` adds a **Face Unlock** entry to System Settings that opens this same app,
-so you can reach it from where Plasma users expect to find it. See the
+`gaze-kde` adds a **Face Unlock** entry to System Settings that opens this app. See the
 [KDE Plasma guide](/guide/kde#system-settings).
 :::
 
-`gaze-gui` is the easiest way to enroll faces and check auth health.
+Use `gaze-gui` to enroll your face, test recognition, and adjust Gaze settings.
 
 Launch it:
 
@@ -17,12 +16,12 @@ Launch it:
 gaze-gui
 ```
 
-- **Enroll a new face profile**: Initiates a guided camera capture. If both RGB and IR cameras are configured, it captures from both.
-- **View enrolled profiles**: The main window lists enrolled faces with `RGB` and `IR` badges and the total template capture count. A badge is green when the profile has captures for that spectrum, amber when a camera is configured for it but the profile has none, and grey when no camera is configured for that spectrum at all. An RGB-only machine therefore shows a green `RGB` and a grey `IR`, not a failure.
-- **Refine profiles**: Tap the edit/refine icon on a profile to capture additional samples or add a missing spectrum (e.g. adding IR captures to an existing RGB-only face profile after configuring an IR camera).
-- **Test authentication**: Check Gaze's recognition with immediate pass/fail visual feedback.
-- **Remove profiles**: Delete specific face profiles.
-- **Configure daemon settings**: Change security levels, cameras, liveness settings, and hybrid policies.
+- **Enroll a face:** Follow the camera prompts. If both RGB and IR cameras are configured, Gaze captures from both.
+- **View profiles:** The main window lists enrolled faces, their total template counts, and `RGB` and `IR` badges. A badge is green when the profile has captures for that spectrum, amber when a camera is configured but the profile has no captures, and grey when no camera is configured. An RGB-only machine therefore shows a green `RGB` badge and a grey `IR` badge; grey does not indicate a failure.
+- **Refine a profile:** Select its edit/refine icon to capture additional samples or add a missing spectrum. For example, you can add IR captures to an RGB-only profile after configuring an IR camera.
+- **Test authentication:** Run a face scan to check whether Gaze recognizes you.
+- **Remove profiles:** Delete individual face profiles.
+- **Change daemon settings:** Adjust the security level, cameras, liveness settings, and hybrid policy.
 
 ## Configuration dialog
 
@@ -38,12 +37,11 @@ the file through the daemon, so it needs a polkit authorization.
 
 **Hardware**
 
-- Inference execution provider, either ONNX Runtime directly or through OpenVINO
-- OpenVINO inference device
+- Inference execution provider: CPU, automatic NPU selection, Intel OpenVINO, or AMD Vitis AI
+- OpenVINO inference device; automatic and AMD modes select NPU
 
-Both offer only `cpu` on the released packages. The other values need a build
-compiled with the `openvino-config` Cargo feature. See
-[Configuration](/guide/configuration) for what those builds accept.
+The standard build exposes all providers. Install the vendor runtime and drivers
+using [Hardware Acceleration](/guide/acceleration), then restart the daemon after changing its provider.
 
 **Cameras**
 
@@ -76,8 +74,8 @@ compiled with the `openvino-config` Cargo feature. See
 - Encrypt face templates, which seals enrolled templates with the TPM. See
   [How it works](/guide/how-it-works) for what that protects against.
 - Unlock GNOME Keyring, which replays an enrolled password after a
-  liveness-protected GDM face login. It needs template encryption and liveness
-  on, and each user still has to run `gaze keyring`. Read
+  liveness-protected GDM or greetd face login. It needs template encryption and
+  liveness on, and each user still has to run `gaze keyring`. Read
   [what it changes about your security](/guide/gnome#what-this-changes-about-your-security)
   first.
 
@@ -100,7 +98,7 @@ Check daemon status:
 systemctl status gazed
 ```
 
-If stopped:
+If the service is stopped, enable and start it:
 
 ```bash
 sudo systemctl enable --now gazed

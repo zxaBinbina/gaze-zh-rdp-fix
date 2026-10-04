@@ -5,14 +5,14 @@
 
 Gaze is configured with `/etc/gaze/config.toml`.
 
-Most users only need to change camera source or security level.
+The defaults work for many setups. Common adjustments include choosing a camera
+source or changing the security level.
 
 ::: tip Editing config requires admin privileges
-Settings are written through the daemon, which refuses unauthorized writes.
-`gaze config` re-runs itself through `sudo` and prompts for your password;
-`gaze config --show` is read-only and needs no privileges. The GUI settings
-window instead authorizes through PolicyKit and uses the desktop's password
-dialog, so make sure the `polkit` package is installed.
+The daemon requires authorization before saving changes. `gaze config` prompts
+for your password through `sudo`, while `gaze config --show` is read-only and
+needs no privileges. The GUI asks for authorization through PolicyKit and uses
+your desktop's password dialog, so make sure the `polkit` package is installed.
 :::
 
 ## Default config
@@ -55,6 +55,11 @@ max_seconds = 2.0
 encrypt_templates = false
 unlock_kwallet = false # optional TPM-backed KDE wallet unlock
 unlock_gnome_keyring = false
+
+[duress]
+enabled = false
+closed_threshold = 0.9
+hold_ms = 600
 ```
 
 ## Upgrades
@@ -78,42 +83,36 @@ execution_provider = "cpu"
 device = "cpu"
 ```
 
-OpenVINO does not select a fixed device at build time. The same
-OpenVINO-enabled Gaze binary can use an Intel CPU, Intel GPU, or Intel NPU.
-Select the device in `/etc/gaze/config.toml`.
-
-> **Hardware limitation:** `device = "npu"` means an Intel NPU. Gaze's OpenVINO
-> execution provider does not support AMD Ryzen AI/XDNA NPUs or AMD GPUs, so
-> setting this option on a Ryzen laptop will not use its NPU. Use the CPU
-> provider on AMD hardware.
-
-For supported Intel hardware, select the device like this:
+Standard builds also support Intel OpenVINO and AMD Ryzen AI. To use either one,
+install its drivers and runtime as described in the
+[hardware acceleration guide](/guide/acceleration), then select automatic NPU
+acceleration:
 
 ```toml
 [inference]
-execution_provider = "openvino"
-device = "npu" # or "gpu" for an Intel GPU, "cpu" for an Intel CPU
+execution_provider = "auto"
+device = "npu"
 ```
 
-The shipped packages are CPU-only. Using OpenVINO requires both an ONNX Runtime
-built with its OpenVINO execution provider and a Gaze daemon compiled with the
-`openvino` Cargo feature; changing the config alone cannot enable it. See the
-[OpenVINO build instructions](/guide/development#build-and-test-rust-components).
-The Intel accelerator's Linux driver/runtime must also be installed for OpenVINO
-to discover and use it. Switching between supported devices does not require
-recompiling Gaze once you have an OpenVINO-enabled build.
+| Provider | Devices | Behavior |
+| --- | --- | --- |
+| `cpu` | `cpu` | Bundled ONNX Runtime CPU inference (default) |
+| `auto` | `npu` | Select Intel (`intel_vpu`) or AMD (`amdxdna`) from the bound NPU driver |
+| `openvino` | `cpu`, `gpu`, `npu` | Use the installed Intel OpenVINO runtime |
+| `vitis` | `npu` | Use the installed AMD Ryzen AI/Vitis AI runtime |
 
-On a CPU-only build, `gaze config` and the GUI refuse to set
-`execution_provider = "openvino"`. A config file that already contains it does
-not stop the daemon: it logs a warning and runs on the CPU, the same way every
-other unusable value in `/etc/gaze/config.toml` is handled.
+Restart `gazed` after installing a runtime or changing provider vendors. ONNX Runtime
+is loaded once per daemon process. Changing an OpenVINO device within that runtime
+can still reload models without restarting.
 
-The values stay lowercase in the config. Gaze converts the device name only
-when it calls OpenVINO. ONNX Runtime keeps its CPU execution provider after
-OpenVINO. It runs unsupported model operations on the CPU. If Gaze cannot
-create an OpenVINO session, it logs the error and creates a CPU session.
-`gaze doctor --benchmark` reports the execution provider and device each model
-actually uses, and warns when that is not the configured one.
+Missing libraries, unavailable drivers, model compilation failures, or failed startup
+warmups produce a logged reason and a CPU session for the affected model. CPU graph
+partitions may remain inside a successful accelerator session too; the provider label
+alone does not prove that every operation ran on the NPU. `gaze doctor --benchmark`
+reports each model's selected provider, timings, and any session fallback reason.
+
+OpenVINO's NPU support targets Intel. AMD uses `vitis`, with the hardware and OS
+restrictions documented by AMD. Neither provider makes an ordinary CPU or GPU an NPU.
 
 ## Change security level
 
@@ -166,7 +165,7 @@ never attempted at all, for example when the RGB camera could not be opened.
 Only a frame that was captured and measured as too dark relaxes the requirement
 to IR alone.
 
-## Select Camera Source
+## Select a camera source
 
 The default camera source is:
 
@@ -175,7 +174,8 @@ The default camera source is:
 rgb = "primary"
 ```
 
-`primary` resolves to the first color `/dev/video*` node. To pin Gaze to a specific PipeWire camera, use `gaze config` or set `rgb` to a GStreamer source:
+`primary` selects the first color `/dev/video*` node. To use a specific PipeWire
+camera, open `gaze config` or set `rgb` to a GStreamer source:
 
 ```toml
 [cameras]
@@ -183,13 +183,13 @@ rgb = "pipewiresrc target-object=<pipewire-target>"
 ```
 
 For authentication and enrollment, the privileged daemon captures the backing
-kernel `/dev/video*` node directly with `v4l2src` and never connects to a
-user-session PipeWire socket: that socket — and every virtual camera it
-advertises — is controlled by the user being authenticated, so trusting it would
-let injected frames reach face authentication. A pinned PipeWire target is
-resolved to its own V4L2 node the same way, and a source with no kernel node
-(including a hand-written GStreamer pipeline) is refused. `primary` therefore
-works in greeters and on plain TTYs with no PipeWire session at all.
+kernel `/dev/video*` node directly with `v4l2src`; it never connects to a
+user-session PipeWire socket. The authenticated user controls that socket and
+every virtual camera it advertises, so trusting it could let injected frames
+reach face authentication. Gaze resolves a pinned PipeWire target to its own
+V4L2 node in the same way, and refuses sources without a kernel node, including
+hand-written GStreamer pipelines. As a result, `primary` also works in greeters
+and on plain TTYs without a PipeWire session.
 
 Pinning `rgb` to the camera directly uses `v4l2src` straight away without
 resolving a PipeWire target first. Prefer it when the machine has several
@@ -237,7 +237,9 @@ ir = "usb:046d:085e"
 # ir = "pipewiresrc target-object=<pipewire-target>"
 ```
 
-When `ir` is configured, Gaze captures from both the RGB and IR cameras. During enrollment, both cameras capture templates. During verification, Gaze combines the results according to the configured `hybrid_policy`.
+When you configure an IR camera alongside RGB, Gaze captures templates from both
+during enrollment, then combines their results during verification according to
+the configured `hybrid_policy`.
 
 ### Parallel RGB + IR capture
 
@@ -255,7 +257,7 @@ parallel_capture = "auto"
 | --- | --- |
 | `never` (default) | Always capture RGB, then IR. Works on every camera. |
 | `auto` | Capture in parallel only when RGB and IR are separate hardware functions. |
-| `always` | Always capture in parallel. Use only if you know your camera supports it. |
+| `always` | Always capture in parallel. Choose this only after confirming your camera supports simultaneous streaming. |
 
 `auto` resolves each configured source to its `/dev/video*` node and compares the hardware function behind it (for USB cameras, the sysfs USB interface the node hangs off). Two nodes on the same function are substreams of one device that only streams one mode at a time, so they stay serial even though their node numbers differ. This is the BRIO case, where `/dev/video0` and `/dev/video2` share a single UVC function.
 
@@ -263,7 +265,13 @@ The default `rgb = "primary"` means the first color `/dev/video*` node. Rather t
 
 Parallel capture only changes *when* each spectrum is captured, never whether both have to pass. `hybrid_policy` behaves identically in both modes. The speedup is also bounded by face detection, which both spectra share, so expect a real improvement rather than a halving.
 
-Some Windows Hello webcams expose their RGB and IR sensors as a single USB Video Class function and can't stream both at once. Enrollment still works since it only needs short bursts, but parallel RGB+IR verification drops the IR stream mid-loop (`IR camera stream stopped unexpectedly`) and auth falls back to password. If you hit this after setting `parallel_capture`, set it back to `never`. Enrollment always captures one camera at a time regardless of this setting.
+Some Windows Hello webcams expose their RGB and IR sensors through one USB Video
+Class function and cannot stream both at once. Enrollment still works because it
+captures only short bursts, but parallel RGB+IR verification can drop the IR
+stream mid-loop (`IR camera stream stopped unexpectedly`) and fall back to your
+password. If this happens after you enable `parallel_capture`, switch it back to
+`never`. Enrollment always captures from one camera at a time, regardless of
+this setting.
 
 The Logitech BRIO 4K (`046d:085e`) is a known example. That's the original BRIO, not the newer Brio 300/500/100, which use different product IDs.
 
@@ -271,15 +279,19 @@ The Logitech BRIO 4K (`046d:085e`) is a known example. That's the original BRIO,
 
 Many IR cameras automatically light their infrared LED when streaming starts. If yours does not, set `emitter_enabled = true` to manually drive the emitter during authentication.
 
-Gaze resolves the underlying `/dev/video*` node from the PipeWire camera, matches USB cameras by VID:PID against a small built-in table, and probes for the standard Microsoft Face Authentication UVC control. The files under `gaze-core/ir-profiles/` describe USB UVC extension-unit requests only.
+Gaze resolves the underlying `/dev/video*` node from the PipeWire camera, matches USB cameras by VID:PID against a small built-in table, and probes for the standard Microsoft Face Authentication UVC control. The files under `crates/gaze-core/ir-profiles/` describe USB UVC extension-unit requests only.
 
-Non-USB emitters driven over I2C use the reviewed profiles in `gaze-core/i2c-ir-profiles/`, which are compiled into Gaze and never read from user configuration. The only one today is the Surface Pro 4 OV7251 sensor. It needs:
+Non-USB emitters driven over I2C use the reviewed profiles in `crates/gaze-core/i2c-ir-profiles/`, which are compiled into Gaze and never read from user configuration. The only one today is the Surface Pro 4 OV7251 sensor. It needs:
 
 - The `i2c-dev` kernel module loaded, so the sensor's `/dev/i2c-*` bus exists. To load it at every boot, run `echo i2c-dev | sudo tee /etc/modules-load.d/i2c-dev.conf`.
 - A userspace bridge that relays the IPU3/CIO2 IR stream into a v4l2loopback device at `/dev/video42` named `Surface IR Camera`, and writes the path of the CIO2 source node to `/run/surface_ir_bridge_dev`. Point `cameras.ir` at `/dev/video42`.
 - The `ov7251` driver bound to `i2c-INT347E:00`.
 
-Gaze takes the I2C bus from the adapter the bound sensor sits on, refuses to write unless a driver has claimed the sensor's address on that bus, and changes only the emitter bit of the register before reading it back. `gaze doctor` reports which of these checks fails. The register value is specific to the verified Surface Pro 4 wiring; do not assume it works on other Surface models or OV7251 devices.
+Gaze uses the I2C bus on the adapter where the sensor is bound. Before writing,
+it checks that a driver has claimed the sensor's address; it then changes only
+the emitter bit and reads the register back. `gaze doctor` reports which check
+failed. This register value has only been verified with the Surface Pro 4 wiring,
+so it may not work with other Surface models or OV7251 devices.
 
 On the IR path, liveness uses eye-motion analysis across frames; the RGB MiniFASNet model is not applied to infrared.
 
@@ -338,7 +350,12 @@ With simultaneous mode (`pam_gaze.so simultaneous`):
 
 `start_delay_ms` delays face verification by the specified number of milliseconds, not only after suspend. Set to `0` to disable the delay.
 
-Use it when your lock screen unlocks itself the moment you lock it manually. Lockers differ in when they start authenticating: hyprlock starts its PAM stack as soon as it launches, and KDE's lock screen starts as soon as its UI appears, so if you are still sitting in front of the camera when you lock, Gaze matches your face and unlocks again immediately. A delay of `3000`-`5000` ms gives you time to step away. The GNOME lock screen does not need this, because face authentication there only begins once you dismiss the lock shield.
+A start delay can help if your lock screen unlocks as soon as you lock it. Lockers
+start authentication at different times: hyprlock starts its PAM stack when it
+launches, and KDE starts scanning as soon as its lock screen appears. If you are
+still in front of the camera, Gaze may recognize you and unlock immediately. A
+delay of `3000`-`5000` ms gives you time to step away. GNOME does not need this
+delay because face authentication begins only after you dismiss the lock shield.
 
 The delay is measured from when the session locked, not from each attempt, so a
 second try during the same lock does not wait all over again. Gaze learns the lock
@@ -377,7 +394,7 @@ Four things to keep in mind:
 - `resume_grace_ms` ignores `start_delay_scope`. It exists so the display can repaint after suspend, which has nothing to do with which prompt is asking, so it still applies to the first authentication after a resume whatever that prompt is.
 - With a sequential PAM stack (`hyprlock-gaze`, the default), `pam_gaze.so` runs before the password module, so the delay also postpones the point at which a typed password is accepted. You can type during the delay, but your first Enter may be consumed while PAM is still inside Gaze, requiring a second press. This is the same behavior as the existing wait while a face scan is in progress. The simultaneous stack (`hyprlock-gaze-simultaneous`) prompts for the password in parallel and avoids it.
 
-After changing config:
+After updating the configuration, restart the daemon to apply the changes:
 
 ```bash
 sudo systemctl restart gazed
@@ -385,9 +402,10 @@ sudo systemctl restart gazed
 
 ## Storage paths
 
-Storage locations are managed by the service setup and are not intended to be changed in config:
+Gaze manages these storage locations for you, so you do not need to configure them:
 
 - User embeddings: `/var/lib/gaze/users`
+- Duress lockouts: `/var/lib/gaze/duress`
 - Downloaded models: `/var/cache/gaze`
 
 Models are auto-downloaded on first run if missing.
@@ -432,11 +450,11 @@ Apply changes with:
 sudo systemctl restart gazed
 ```
 
-## Unlock GNOME Keyring after a GDM face login
+## Unlock GNOME Keyring after a GDM or greetd face login
 
 `storage.unlock_gnome_keyring` defaults to `false`. It requires TPM template
 encryption and liveness; if either is missing the option is ignored and the
-daemon logs why. Run `gaze keyring` for each user after enabling it — users who
+daemon logs why. Run `gaze keyring` for each user after enabling it. Users who
 skip it keep logging in with face and are prompted for the keyring as before.
 Read the security notes in
 [GNOME Keyring setup](/guide/gnome#optional-tpm-backed-keyring-unlock) first:
@@ -466,26 +484,27 @@ occupy at least one quarter of that dimension. Lowering it permits enrollment fr
 farther away; for example, `0.20` permits a face roughly 25% farther away than the
 default. Values from `0.10` through `0.75` are accepted.
 
-This is an enrollment-quality gate only; authentication does not impose the same
-centering and proximity threshold. Use the highest value that remains comfortable,
-because smaller face crops contain less detail for the enrolled template.
+This setting applies only during enrollment; authentication does not enforce the
+same centering and proximity threshold. Choose the highest value that still feels
+comfortable, since smaller face crops provide less detail for the enrolled template.
 
-### Multi-Camera & Hybrid Enrollment
+### Multi-camera and hybrid enrollment
 
-Gaze supports enrolling face profiles for both RGB and IR cameras. Depending on your camera configuration at the time of enrollment:
+Gaze can enroll profiles for both RGB and IR cameras. What it captures depends on your camera configuration when you enroll:
 
-- **Single Camera Setup**: If only the RGB camera is configured (the default), Gaze will capture and save templates only for the RGB spectrum.
-- **Dual Camera (Hybrid) Setup**: If both the RGB and IR cameras are configured, Gaze will capture from both cameras concurrently. Each enrollment step will wait for valid aligned frames from both sensors.
+- **Single camera:** If only the RGB camera is configured (the default), Gaze captures and saves RGB templates only.
+- **Dual-camera (hybrid) setup:** If both RGB and IR cameras are configured, Gaze captures from both during enrollment. Each step waits for valid, aligned frames from both sensors.
 
 ### Upgrading Existing Profiles
 
-If you connect or configure an IR camera after you have already enrolled a face, your existing face profiles will only contain RGB captures.
-- You can see which capture types exist for each face profile in the CLI (`gaze list-faces`) and the GUI settings window, which display `[RGB]` and `[IR]` badges: green when the profile covers that spectrum, amber when a camera is configured for it but the profile has no captures from it, and grey when no camera is configured for that spectrum at all.
-- To add the missing IR captures to an existing profile, ensure your IR camera is configured, and run:
+If you add or configure an IR camera after enrolling a face, your existing
+profiles will contain RGB captures only.
+- To see which captures each profile contains, run `gaze list-faces` or open the GUI settings. The `[RGB]` and `[IR]` badges are green when a profile has captures for that spectrum, amber when a camera is configured but the profile has no captures, and grey when no camera is configured.
+- To add IR captures to an existing profile, make sure the IR camera is configured, then run:
   ```bash
   gaze refine-face <profile-name>
   ```
-  Or refine the profile using the GUI. Gaze will run the camera stream to capture the missing spectrum and merge the new templates into your existing profile.
+  You can also refine the profile in the GUI. Gaze captures the missing spectrum and adds the new templates to the existing profile.
 
 ## Liveness Anti-Spoofing
 
@@ -501,6 +520,38 @@ When enabled, Gaze runs a local MiniFASNet-V2 anti-spoofing model on the detecte
 Alongside the model, Gaze watches how far your eyes travel between frames, measured against the distance between them so it does not depend on how close you sit. A run that has accumulated several frame pairs and never seen movement above that floor is treated as a still object and refused even when the model is confident. Moving normally (breathing, blinking, small head shifts) clears it; once any pair shows movement, holding still afterwards does not undo it. On IR cameras this movement check is the whole liveness test, since the anti-spoof model is trained on colour frames.
 
 `max_seconds` caps how long (in seconds of usable face frames) Gaze examines the camera before giving up and falling back to your password. It bounds the whole attempt, not just the liveness stage: an unrecognised face spends the same budget. Gaze calculates the frame budget dynamically using your camera's actual frame rate (e.g. 2.0 seconds corresponds to 60 frames on a 30fps webcam, or 120 frames on a 60fps camera). Frames only count while a usable face is in view, and the RGB and IR phases each get the full budget. Raise it if authentication gives up before you are ready; `gaze auth --verbose` reports when a run ends this way.
+
+## Duress Signal
+
+```toml
+[duress]
+enabled = false
+closed_threshold = 0.9
+hold_ms = 600
+```
+
+Someone can hold your laptop up to your face, but they cannot make you type a password. With duress detection on, you can refuse a forced face unlock with your eyes: keep one eye (or both) closed while the camera sees you.
+
+How it works:
+
+- After your face matches, Gaze runs a small local open/closed eye classifier ([Intel Open Model Zoo `open-closed-eye-0001`](https://github.com/openvinotoolkit/open_model_zoo/tree/master/models/public/open-closed-eye-0001), about 46 KB, Apache-2.0) on each eye. It downloads into `/var/cache/gaze` the first time duress is enabled.
+- A matched frame where either eye is closed never unlocks. That alone means a blink cannot let a coerced unlock through.
+- If an eye stays closed for `hold_ms`, Gaze rejects the attempt and locks face authentication for that user. While locked, face unlock reports itself as unavailable and falls straight through to the password prompt without touching the camera.
+- The lock is stored in `/var/lib/gaze/duress`, so a reboot or daemon restart does not clear it.
+- It clears after a successful login that did not use your face, such as your password, on any service where `pam_gaze.so` is in the auth stack (including the `gdm-password`, KDE, and sudo stacks Gaze installs into). You can also clear it with `gaze duress --clear`.
+
+Settings:
+
+- `closed_threshold` is the classifier's closed-eye probability (0.5 to 0.99) needed to count an eye as shut. Lower it if a deliberate wink is missed; raise it if squinting or laughing trips it.
+- `hold_ms` is how long (0 to 5000 ms) the eye must stay shut. A normal blink takes 100 to 400 ms.
+
+The duress table lives only in `/etc/gaze/config.toml`. The GUI and `gaze config` leave it untouched, and the daemon reads it at the start of every face auth, so no restart is needed.
+
+Limits to be aware of:
+
+- Close your eye before the camera sees you. Any matched frame with both eyes open unlocks as usual.
+- Another non-face login method, such as a fingerprint, also clears the lock.
+- The classifier works on RGB and IR frames, but it is not perfect. Test it with `gaze auth` before relying on it: a held wink should end in a lockout, and `gaze duress --clear` resets it. Running `gazed` with `RUST_LOG=debug` logs the per-eye scores.
 
 ## Recommended tuning workflow
 
