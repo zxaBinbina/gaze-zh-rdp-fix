@@ -254,10 +254,37 @@ impl AuthDaemon {
         Ok(self.current_config().await.storage.unlock_gnome_keyring)
     }
 
+    async fn ir_frame_size(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<(u32, u32)> {
+        Self::ensure_config_read_access(&header).await?;
+        Ok(self
+            .current_config()
+            .await
+            .cameras
+            .ir_frame_size()
+            .unwrap_or((0, 0)))
+    }
+
+    async fn set_ir_frame_size(
+        &self,
+        #[zbus(signal_context)] ctxt: SignalEmitter<'_>,
+        #[zbus(header)] header: Header<'_>,
+        width: u32,
+        height: u32,
+    ) -> fdo::Result<()> {
+        Self::ensure_authorized(&header, POLKIT_ACTION_MANAGE_CONFIG).await?;
+        let mut config = self.current_config().await;
+        let requested = ((width, height) != (0, 0)).then_some((width, height));
+        if config.cameras.ir_frame_size() == requested {
+            return Ok(());
+        }
+        config.cameras.set_ir_frame_size(requested);
+        self.apply_config(config).await?;
+        self.config_invalidate(&ctxt).await.map_err(Into::into)
+    }
+
     async fn verify_stop(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<()> {
-        self.check_claim(&header).await?;
-        self.cancel_active_tasks().await;
-        Ok(())
+        let claim = self.check_claim(&header).await?;
+        cancel_claim_task(&self.claim_state, &self.active_cancel, claim.epoch).await
     }
 
     async fn enroll_start(
@@ -270,12 +297,8 @@ impl AuthDaemon {
         let username = claim.username.clone();
         Self::ensure_face_write_access(&header, &username, POLKIT_ACTION_MANAGE_FACES).await?;
         let signal_destination = Self::signal_destination(&claim.sender)?;
-        self.cancel_active_tasks().await;
 
         UserDatabase::validate_face_name(&face_name).map_err(Self::map_user_db_error)?;
-
-        let (tx, mut rx) = oneshot::channel();
-        *self.active_cancel.lock().await = Some(tx);
 
         let detector_arc = self.detector.clone();
         let recognizer_rgb_arc = self.recognizer_rgb.clone();
@@ -290,6 +313,10 @@ impl AuthDaemon {
         let emitter_enabled = config.cameras.emitter_enabled;
         let conn = ctxt.connection().clone();
         let path = ctxt.path().to_owned();
+        let claim_state = self.claim_state.clone();
+        Self::ensure_claim_camera_access(&header, &claim).await?;
+        let mut rx =
+            replace_claim_task(&self.claim_state, &self.active_cancel, claim.epoch).await?;
 
         self.rt_handle.spawn(async move {
             let ctxt = match SignalEmitter::new(&conn, path) {
@@ -565,7 +592,7 @@ impl AuthDaemon {
                                 &CameraKind::Ir { source: ir_device_clone.clone(), node: ir_node_clone.clone() },
                                 emitter_enabled
                             );
-                            let mut cam = match Camera::open_ir_privileged(&ir_device_clone) {
+                            let mut cam = match Camera::open_ir_privileged(&ir_device_clone, config_clone.cameras.ir_frame_size()) {
                                 Ok(c) => c,
                                 Err(e) => {
                                     dead_streams += 1;
@@ -636,7 +663,7 @@ impl AuthDaemon {
                         emitter_enabled
                     );
 
-                    let mut cam = match Camera::open_ir_privileged(&ir_device_clone) {
+                    let mut cam = match Camera::open_ir_privileged(&ir_device_clone, config_clone.cameras.ir_frame_size()) {
                         Ok(c) => c,
                         Err(e) => {
                             let _ = tx.blocking_send(EnrollMsg::Error(format!("IR Camera open error: {e}")));
@@ -749,6 +776,7 @@ impl AuthDaemon {
                 }
 
                 tokio::select! {
+                    biased;
                     _ = &mut rx => {
                         info!("EnrollStart: cancelled");
                         let _ = Self::enroll_status(&ctxt, &face_name, completed_steps as u32, max_steps, true, EnrollPrompt::Cancelled, -1.0).await;
@@ -847,19 +875,33 @@ impl AuthDaemon {
             }
 
             stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-            if !aborted {
+            // Unblock any producer waiting on a full channel before joining it.
+            drop(enroll_rx);
+            drop(preview_rx);
+            let state = claim_state.lock().await;
+            if !aborted && claim_has_epoch(&state, claim.epoch) {
                 let mut db = db_arc.lock().await;
-                match db.add_template(&username, &face_name, &template_id, captured_embeddings) {
-                    Ok(_) => {
+                // Stop/replacement may arrive during the pause after the last capture.
+                let saved = if rx.try_recv() == Err(oneshot::error::TryRecvError::Empty) {
+                    Some(db.add_template(&username, &face_name, &template_id, captured_embeddings))
+                } else {
+                    None
+                };
+                match saved {
+                    Some(Ok(_)) => {
                         info!("Template saved successfully!");
                         let _ = Self::enroll_status(&ctxt, &face_name, max_steps, max_steps, true, EnrollPrompt::Completed, 0.0).await;
                     }
-                    Err(e) => {
+                    Some(Err(e)) => {
                         error!("DB error saving template: {}", e);
                         let _ = Self::enroll_status(&ctxt, &face_name, max_steps, max_steps, true, EnrollPrompt::DbFailed, -1.0).await;
                     }
+                    None => {
+                        let _ = Self::enroll_status(&ctxt, &face_name, completed_steps as u32, max_steps, true, EnrollPrompt::Cancelled, -1.0).await;
+                    }
                 }
             }
+            drop(state);
 
             if let Some(t) = rgb_thread {
                 let _ = t.join();
@@ -873,9 +915,8 @@ impl AuthDaemon {
     }
 
     async fn enroll_stop(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<()> {
-        self.check_claim(&header).await?;
-        self.cancel_active_tasks().await;
-        Ok(())
+        let claim = self.check_claim(&header).await?;
+        cancel_claim_task(&self.claim_state, &self.active_cancel, claim.epoch).await
     }
 
     async fn list_faces(
@@ -988,7 +1029,9 @@ impl AuthDaemon {
         #[zbus(header)] header: Header<'_>,
         username: String,
     ) -> fdo::Result<bool> {
-        Self::ensure_user_access(&header, &username, POLKIT_ACTION_MANAGE_FACES).await?;
+        // Owning the account does not prove a password login. Root PAM callers
+        // clear after successful authentication; manual clears need a fresh challenge.
+        Self::ensure_face_write_access(&header, &username, POLKIT_ACTION_CLEAR_DURESS).await?;
         let cleared = self
             .duress_lockout
             .clear(&username)
@@ -1100,9 +1143,12 @@ impl AuthDaemon {
 
         let mut new_config: Config = new_config.into();
         // Legacy clients do not send these flags; preserve the existing opt-ins.
-        let storage = self.current_config().await.storage;
-        new_config.storage.unlock_gnome_keyring = storage.unlock_gnome_keyring;
-        new_config.storage.unlock_kwallet = storage.unlock_kwallet;
+        let current = self.current_config().await;
+        new_config.storage.unlock_gnome_keyring = current.storage.unlock_gnome_keyring;
+        new_config.storage.unlock_kwallet = current.storage.unlock_kwallet;
+        new_config
+            .cameras
+            .set_ir_frame_size(current.cameras.ir_frame_size());
         // A legacy client cannot see or clear the flag, so treat it as turning the feature off
         // rather than rejecting every later write with an error it cannot act on.
         if new_config.clamp_keyring() {
@@ -1123,7 +1169,11 @@ impl AuthDaemon {
         Self::ensure_authorized(&header, POLKIT_ACTION_MANAGE_CONFIG).await?;
         let mut config = gaze_core::dbus::config_update_from_property(config, unlock_gnome_keyring)
             .map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
-        config.storage.unlock_kwallet = self.current_config().await.storage.unlock_kwallet;
+        let current = self.current_config().await;
+        config.storage.unlock_kwallet = current.storage.unlock_kwallet;
+        config
+            .cameras
+            .set_ir_frame_size(current.cameras.ir_frame_size());
         // This older client cannot clear a KWallet opt-in when removing prerequisites.
         if config.storage.validate_keyring(&config.liveness).is_err() {
             config.storage.unlock_kwallet = false;
@@ -1144,6 +1194,9 @@ impl AuthDaemon {
         let mut config = gaze_core::dbus::config_update_from_property(config, unlock_gnome_keyring)
             .map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
         config.storage.unlock_kwallet = unlock_kwallet;
+        config
+            .cameras
+            .set_ir_frame_size(self.current_config().await.cameras.ir_frame_size());
         config
             .storage
             .validate_keyring(&config.liveness)
