@@ -26,11 +26,11 @@ impl VerifyGiveUp {
     fn reason(self) -> String {
         match self {
             Self::NoFace => format!(
-                "giving up after {}s without a detected face",
+                "{}秒内未检测到人脸，已放弃",
                 VERIFY_NO_FACE_TIMEOUT.as_secs()
             ),
             Self::NoUsableFrame => format!(
-                "giving up after {}s without a usable frame",
+                "{}秒内未获得可用帧，已放弃",
                 VERIFY_NO_USABLE_TIMEOUT.as_secs()
             ),
         }
@@ -167,7 +167,7 @@ pub(super) fn crop_liveness_face(data: &FaceData) -> anyhow::Result<image::RgbIm
     let mat_rgb = data
         .liveness_frame
         .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("liveness frame was not retained"))?;
+        .ok_or_else(|| anyhow::anyhow!("未保留活体检测帧"))?;
     let rgb = mat_to_rgb(mat_rgb)?;
     let (frame_w, frame_h) = data.frame_size;
     let frame_w = frame_w.min(rgb.width()).max(1);
@@ -199,14 +199,13 @@ pub(super) fn eyes_closed_in_frame(
     let frame = data
         .liveness_frame
         .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("frame was not retained for the eye-state check"))?;
-    let eyes =
-        eyes_from_kpss(&data.kpss).ok_or_else(|| anyhow::anyhow!("face landmarks are missing"))?;
+        .ok_or_else(|| anyhow::anyhow!("未保留用于眼睛状态检查的帧"))?;
+    let eyes = eyes_from_kpss(&data.kpss).ok_or_else(|| anyhow::anyhow!("缺少人脸关键点"))?;
     let rgb = mat_to_rgb(frame)?;
     let mut guard = eye_state.blocking_lock();
-    let classifier = guard.as_mut().ok_or_else(|| {
-        anyhow::anyhow!("duress detection is enabled but the eye-state model is unavailable")
-    })?;
+    let classifier = guard
+        .as_mut()
+        .ok_or_else(|| anyhow::anyhow!("胁迫检测已启用，但眼睛状态模型不可用"))?;
     let probabilities = classifier.closed_probabilities(&rgb, [eyes[0], eyes[1]])?;
     tracing::debug!(?probabilities, threshold, "Duress eye state");
     Ok(crate::duress::any_eye_closed(probabilities, threshold))
@@ -338,7 +337,7 @@ impl AuthDaemon {
             match load_eye_state(&config.inference) {
                 Ok(classifier) => *self.eye_state.lock().await = Some(classifier),
                 Err(e) => {
-                    warn!("Duress detection is enabled but the eye-state model failed to load: {e}")
+                    warn!("胁迫检测已启用，但无法加载眼睛状态模型：{e}")
                 }
             }
         }
@@ -362,7 +361,7 @@ impl AuthDaemon {
 
             if duress_locked {
                 info!(
-                    "Face authentication for {} is locked after a duress signal until a password login",
+                    "收到胁迫信号后，{} 的人脸认证已锁定，直到使用密码登录",
                     username
                 );
                 let _ = Self::verify_status(&ctxt, VerifyResult::VerifyNoMatch, Vec::new(), CaptureStatus::Unused, CaptureStatus::Unused).await;
@@ -391,7 +390,7 @@ impl AuthDaemon {
             );
 
             if !run_rgb && !run_ir {
-                error!("No matching templates or cameras configured for auth");
+                error!("未配置可用于认证的匹配模板或摄像头");
                 let _ = Self::verify_status(&ctxt, VerifyResult::VerifyNoMatch, Vec::new(), CaptureStatus::NoFace, CaptureStatus::NoFace).await;
                 return;
             }
@@ -402,8 +401,7 @@ impl AuthDaemon {
                     run_ir,
                     has_rgb_templates,
                     has_ir_templates,
-                    "Hybrid policy \"and\" requires both spectra but {} has no {} templates; \
-                     refusing to authenticate on one spectrum. Re-enrol to cover both.",
+                    "混合策略 \"and\" 需要两种光谱，但 {} 缺少 {} 模板；拒绝仅使用一种光谱认证。请重新录入以覆盖两种光谱。",
                     username,
                     if has_rgb_templates { "IR" } else { "RGB" }
                 );
@@ -491,7 +489,7 @@ impl AuthDaemon {
                     let mut cam = match Camera::open_privileged(&rgb_device_clone) {
                         Ok(c) => c,
                         Err(e) => {
-                            let _ = tx.blocking_send(VerifyMsg::Error(format!("RGB Camera open error: {e}")));
+                            let _ = tx.blocking_send(VerifyMsg::Error(format!("打开 RGB 摄像头出错：{e}")));
                             return;
                         }
                     };
@@ -627,7 +625,7 @@ impl AuthDaemon {
                                     let mut live_guard = liveness_arc.blocking_lock();
                                     let Some(detector) = live_guard.as_mut() else {
                                         let _ = tx.blocking_send(VerifyMsg::Error(
-                                            "Liveness is enabled but the anti-spoof model is unavailable".to_string(),
+                                            "活体检测已启用，但防伪模型不可用".to_string(),
                                         ));
                                         return;
                                     };
@@ -670,7 +668,7 @@ impl AuthDaemon {
                         // A device taken by another program only fails once it tries to stream,
                         // so this is where "already in use" surfaces.
                         let reason = cam.take_stream_error().unwrap_or_else(|| {
-                            "RGB camera stream stopped unexpectedly".to_string()
+                            "RGB 摄像头数据流意外停止".to_string()
                         });
                         let _ = tx.blocking_send(VerifyMsg::Error(reason));
                     }
@@ -723,7 +721,7 @@ impl AuthDaemon {
                     let mut cam = match Camera::open_ir_privileged(&ir_device_clone, config_clone.cameras.ir_frame_size()) {
                         Ok(c) => c,
                         Err(e) => {
-                            let _ = tx.blocking_send(VerifyMsg::Error(format!("IR Camera open error: {e}")));
+                            let _ = tx.blocking_send(VerifyMsg::Error(format!("打开红外摄像头出错：{e}")));
                             return;
                         }
                     };
@@ -845,7 +843,7 @@ impl AuthDaemon {
 
                     if !stop_clone.load(std::sync::atomic::Ordering::Relaxed) {
                         let reason = cam.take_stream_error().unwrap_or_else(|| {
-                            "IR camera stream stopped unexpectedly".to_string()
+                            "红外摄像头数据流意外停止".to_string()
                         });
                         let _ = tx.blocking_send(VerifyMsg::Error(reason));
                     }

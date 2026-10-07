@@ -24,10 +24,8 @@ impl PolkitAgent {
             Ok(agent) => agent,
             Err(err) => {
                 eprintln!(
-                    "{} could not start pkttyagent ({err}); if authorization \
-                     fails, run `gaze` from a graphical session or install \
-                     polkit's tty agent.",
-                    style("note:").yellow().bold()
+                    "{} 无法启动 pkttyagent（{err}）；如果授权失败，请在图形会话中运行 `gaze`，或安装 polkit 的终端代理。",
+                    style("提示：").yellow().bold()
                 );
                 PolkitAgent { child: None }
             }

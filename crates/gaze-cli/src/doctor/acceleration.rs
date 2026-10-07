@@ -7,7 +7,7 @@ use std::path::Path;
 
 fn register_fix(library: &Path) -> String {
     format!(
-        "Link the vendor's libonnxruntime.so to {} and list its SDK library directories in {}; then restart gazed.",
+        "将厂商的 libonnxruntime.so 链接到 {}，并在 {} 中列出其 SDK 库目录；然后重启 gazed。",
         library.display(),
         library.with_file_name("library-path").display()
     )
@@ -30,16 +30,16 @@ pub(super) fn check_acceleration(report: &mut Report, config: Option<&Config>) {
     });
     if devices.is_empty() && wants_npu {
         report.warning(
-            "NPU hardware",
-            "no supported NPU driver is bound in /sys/class/accel",
-            "Install your vendor's NPU kernel driver and firmware; an Intel or AMD CPU alone does not imply an NPU.",
+            "NPU 硬件",
+            "/sys/class/accel 中未绑定受支持的 NPU 驱动",
+            "安装厂商的 NPU 内核驱动和固件；仅有 Intel 或 AMD CPU 并不代表具备 NPU。",
         );
     }
     for device in &devices {
         report.pass(
-            "NPU hardware",
+            "NPU 硬件",
             format!(
-                "{} uses {} ({})",
+                "{} 使用 {}（{}）",
                 device.node.display(),
                 device.driver,
                 device.provider
@@ -47,9 +47,9 @@ pub(super) fn check_acceleration(report: &mut Report, config: Option<&Config>) {
         );
         if !device.node.exists() {
             report.warning(
-                "NPU device",
-                format!("{} is missing", device.node.display()),
-                "Check the NPU kernel driver, firmware, and /dev/accel permissions.",
+                "NPU 设备",
+                format!("{} 不存在", device.node.display()),
+                "检查 NPU 内核驱动、固件和 /dev/accel 权限。",
             );
         }
     }
@@ -61,16 +61,16 @@ pub(super) fn check_acceleration(report: &mut Report, config: Option<&Config>) {
         let library = vendor_runtime(provider);
         if library.is_file() {
             report.pass(
-                "Accelerator runtime",
+                "加速器运行时",
                 format!(
-                    "{} is registered; `gaze doctor --benchmark` checks model sessions",
+                    "{} 已注册；`gaze doctor --benchmark` 可检查模型会话",
                     library.display()
                 ),
             );
         } else {
             report.warning(
-                "Accelerator runtime",
-                format!("{provider} is configured but not registered"),
+                "加速器运行时",
+                format!("已配置 {provider}，但未注册"),
                 register_fix(&library),
             );
         }
@@ -84,16 +84,16 @@ pub(super) fn check_acceleration(report: &mut Report, config: Option<&Config>) {
         let library = vendor_runtime(provider);
         if library.is_file() {
             report.off(
-                "NPU acceleration",
-                format!("{provider} runtime is registered; CPU is configured"),
-                "Choose auto/npu in `gaze config`, then restart gazed.",
+                "NPU 加速",
+                format!("{provider} 运行时已注册；当前配置为 CPU"),
+                "在 `gaze config` 中选择 auto/npu，然后重启 gazed。",
             );
         } else {
             report.off(
-                "NPU acceleration",
-                format!("an NPU is present but no {provider} runtime is registered"),
+                "NPU 加速",
+                format!("存在 NPU，但未注册 {provider} 运行时"),
                 format!(
-                    "{} Then choose auto/npu in `gaze config`.",
+                    "{} 然后在 `gaze config` 中选择 auto/npu。",
                     register_fix(&library)
                 ),
             );
@@ -168,6 +168,6 @@ mod tests {
             fix.contains("/usr/lib/gaze/runtimes/openvino/library-path"),
             "{fix}"
         );
-        assert!(fix.contains("restart gazed"), "{fix}");
+        assert!(fix.contains("重启 gazed"), "{fix}");
     }
 }

@@ -131,24 +131,24 @@ pub fn mat_to_rgb(
     let sz = mat.size()?;
     anyhow::ensure!(
         mat.typ() == opencv::core::CV_8UC3,
-        "expected an 8-bit 3-channel Mat, got type {}",
+        "应为 8 位三通道 Mat，实际类型为 {}",
         mat.typ()
     );
-    anyhow::ensure!(mat.is_continuous(), "Mat rows are not tightly packed");
+    anyhow::ensure!(mat.is_continuous(), "Mat 行未紧密排列");
 
     let bytes = mat.data_bytes()?;
     let expected = (sz.width as usize)
         .checked_mul(sz.height as usize)
         .and_then(|pixels| pixels.checked_mul(3))
-        .ok_or_else(|| anyhow::anyhow!("Mat dimensions overflow a byte count"))?;
+        .ok_or_else(|| anyhow::anyhow!("Mat 尺寸导致字节数溢出"))?;
     anyhow::ensure!(
         bytes.len() == expected,
-        "Mat holds {} bytes, expected {expected}",
+        "Mat 包含 {} 字节，预期为 {expected}",
         bytes.len()
     );
 
     ImageBuffer::from_raw(sz.width as u32, sz.height as u32, bytes)
-        .ok_or_else(|| anyhow::anyhow!("Failed to create RgbImage from Mat raw bytes"))
+        .ok_or_else(|| anyhow::anyhow!("无法从 Mat 原始字节创建 RgbImage"))
 }
 
 pub fn align_face(
@@ -158,8 +158,7 @@ pub fn align_face(
 ) -> anyhow::Result<image::RgbImage> {
     let k: [[f32; 2]; 5] =
         std::array::from_fn(|i| [kpss[[face_index, i, 0]], kpss[[face_index, i, 1]]]);
-    let transform = umeyama(&k, &ARCFACE_SRC_PTS)
-        .ok_or_else(|| anyhow::anyhow!("Failed to estimate transform"))?;
+    let transform = umeyama(&k, &ARCFACE_SRC_PTS).ok_or_else(|| anyhow::anyhow!("无法估算变换"))?;
 
     let img_rgb = mat_to_rgb(mat_rgb)?;
     Ok(warp_affine(&img_rgb, &transform, 112, 112))

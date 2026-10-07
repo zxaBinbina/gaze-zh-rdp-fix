@@ -28,13 +28,12 @@ impl EmbeddingCipher {
     /// Seals under a fresh AES-256-GCM nonce, framed as `MAGIC || nonce || ciphertext`.
     pub fn encrypt(&self, plaintext: &[u8]) -> anyhow::Result<Vec<u8>> {
         let mut nonce_bytes = [0u8; NONCE_LEN];
-        getrandom::fill(&mut nonce_bytes)
-            .map_err(|e| anyhow!("failed to draw a random nonce: {e}"))?;
+        getrandom::fill(&mut nonce_bytes).map_err(|e| anyhow!("无法生成随机 nonce：{e}"))?;
         let nonce = Nonce::from(nonce_bytes);
         let ciphertext = self
             .cipher
             .encrypt(&nonce, plaintext)
-            .map_err(|e| anyhow!("embedding encryption failed: {e}"))?;
+            .map_err(|e| anyhow!("特征向量加密失败：{e}"))?;
 
         let mut out = Vec::with_capacity(MAGIC.len() + NONCE_LEN + ciphertext.len());
         out.extend_from_slice(MAGIC);
@@ -45,14 +44,14 @@ impl EmbeddingCipher {
 
     pub fn decrypt(&self, data: &[u8]) -> anyhow::Result<Vec<u8>> {
         if !is_encrypted(data) {
-            return Err(anyhow!("not a Gaze-encrypted embedding"));
+            return Err(anyhow!("不是 Gaze 加密的特征向量"));
         }
         let (nonce_bytes, ciphertext) = data[MAGIC.len()..].split_at(NONCE_LEN);
-        let nonce = Nonce::try_from(nonce_bytes).map_err(|e| anyhow!("invalid nonce: {e}"))?;
+        let nonce = Nonce::try_from(nonce_bytes).map_err(|e| anyhow!("nonce 无效：{e}"))?;
         let nonce = &nonce;
         self.cipher
             .decrypt(nonce, ciphertext)
-            .map_err(|_| anyhow!("embedding decryption failed (wrong TPM key or corrupt data)"))
+            .map_err(|_| anyhow!("特征向量解密失败（TPM 密钥不正确或数据损坏）"))
     }
 }
 

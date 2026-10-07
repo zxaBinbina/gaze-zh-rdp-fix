@@ -65,7 +65,7 @@ pub(super) fn desktop_from_processes(uid: u32) -> String {
 /// Names the exact preferences page and group, making it easier for users to find.
 pub(super) fn gnome_prefs_path(group: &str, switch: &str) -> String {
     format!(
-        "Open it with `gnome-extensions prefs {GNOME_EXTENSION_ID}` (or the Extensions app, then Gaze), then Behavior -> {group} -> \"{switch}\""
+        "使用 `gnome-extensions prefs {GNOME_EXTENSION_ID}`（或打开扩展应用，再选择 Gaze），然后选择“行为”-> {group} -> \"{switch}\""
     )
 }
 
@@ -73,11 +73,7 @@ pub(super) fn gnome_prefs_path(group: &str, switch: &str) -> String {
 /// an unseen UUID, it drops that UUID the next time it rewrites `enabled-extensions`.
 pub(super) fn gnome_extension_enable_steps() -> String {
     format!(
-        "1. Reboot, or log out and back in, so GNOME Shell scans the extension.\n\
-         2. Run `gnome-extensions enable {GNOME_EXTENSION_ID}`.\n\
-         3. Run `gsettings set {GNOME_EXTENSION_SCHEMA} enable-face-authentication true`.\n\
-         If step 2 reports that the extension does not exist, Shell has not rescanned yet: reboot and repeat.\n\
-         Details: {GNOME_DOCS_URL}"
+        "1. 重启或注销后重新登录，让 GNOME Shell 扫描扩展。\n2. 运行 `gnome-extensions enable {GNOME_EXTENSION_ID}`。\n3. 运行 `gsettings set {GNOME_EXTENSION_SCHEMA} enable-face-authentication true`。\n如果第 2 步提示扩展不存在，说明 Shell 尚未重新扫描：请重启后重试。\n详情：{GNOME_DOCS_URL}"
     )
 }
 
@@ -86,58 +82,56 @@ pub(super) fn check_desktop_integration(report: &mut Report) {
     if desktop.contains("gnome") {
         match command_output("gnome-extensions", &["list", "--enabled"]) {
             Ok((true, output)) if output.lines().any(|line| line.trim() == GNOME_EXTENSION_ID) => {
-                report.pass("GNOME extension", "enabled for the current user");
+                report.pass("GNOME 扩展", "已为当前用户启用");
             }
             Ok((true, _)) if extension_installed() => report.warning(
-                "GNOME extension",
-                "installed, but not enabled for the current user",
+                "GNOME 扩展",
+                "已安装，但未为当前用户启用",
                 gnome_extension_enable_steps(),
             ),
             Ok((true, _)) => report.warning(
-                "GNOME extension",
-                "not installed for the current user",
+                "GNOME 扩展",
+                "未为当前用户安装",
                 format!(
-                    "Install the Gaze GNOME extension package (`gaze-gnome-extension`), reboot, then run `gnome-extensions enable {GNOME_EXTENSION_ID}`. See {GNOME_DOCS_URL}"
+                    "安装 Gaze GNOME 扩展包（`gaze-gnome-extension`），重启后运行 `gnome-extensions enable {GNOME_EXTENSION_ID}`。参见 {GNOME_DOCS_URL}"
                 ),
             ),
             Ok((false, message)) => report.warning(
-                "GNOME extension",
-                format!("could not query extensions: {message}"),
-                "Verify GNOME Shell is running and reinstall the Gaze GNOME extension package.",
+                "GNOME 扩展",
+                format!("无法查询扩展：{message}"),
+                "确认 GNOME Shell 正在运行，并重新安装 Gaze GNOME 扩展包。",
             ),
             Err(err) => report.warning(
-                "GNOME extension",
-                format!("could not query extensions: {err}"),
-                "Install the Gaze GNOME extension package for lock-screen authentication.",
+                "GNOME 扩展",
+                format!("无法查询扩展：{err}"),
+                "安装 Gaze GNOME 扩展包以使用锁屏认证。",
             ),
         }
 
         match extension_setting("enable-face-authentication") {
             Ok((true, value)) if value == "true" => {
                 report.pass(
-                    "GNOME lock-screen face auth",
-                    "enabled for the current user",
+                    "GNOME 锁屏人脸认证",
+                    "已为当前用户启用",
                 );
             }
             Ok((true, _)) => report.off(
-                "GNOME lock-screen face auth",
-                "off for the current user, so the lock screen only takes your password",
+                "GNOME 锁屏人脸认证",
+                "已为当前用户关闭，锁屏仅接受密码",
                 format!(
-                    "Turn it on: {}.\n\
-                     From a terminal: `dconf write /org/gnome/shell/extensions/gaze/enable-face-authentication true`.\n\
-                     (`gsettings set {GNOME_EXTENSION_SCHEMA} ...` does the same, but cannot find the schema where it ships inside the extension directory, as on NixOS.)",
-                    gnome_prefs_path("Face authentication", "Enable face authentication (lock screen)")
+                    "启用方法：{}。\n在终端中运行：`dconf write /org/gnome/shell/extensions/gaze/enable-face-authentication true`。\n（`gsettings set {GNOME_EXTENSION_SCHEMA} ...` 作用相同，但如果 schema 位于扩展目录内，例如 NixOS，则无法找到它。）",
+                    gnome_prefs_path("人脸认证", "启用人脸认证（锁屏）")
                 ),
             ),
             Ok((false, message)) => report.warning(
-                "GNOME lock-screen face auth",
-                format!("could not read the extension setting: {message}"),
-                "Reinstall the Gaze GNOME extension package.",
+                "GNOME 锁屏人脸认证",
+                format!("无法读取扩展设置：{message}"),
+                "重新安装 Gaze GNOME 扩展包。",
             ),
             Err(err) => report.warning(
-                "GNOME lock-screen face auth",
-                format!("could not read the extension setting: {err}"),
-                "Reinstall the Gaze GNOME extension package.",
+                "GNOME 锁屏人脸认证",
+                format!("无法读取扩展设置：{err}"),
+                "重新安装 Gaze GNOME 扩展包。",
             ),
         }
 
@@ -145,80 +139,76 @@ pub(super) fn check_desktop_integration(report: &mut Report) {
         let dconf_face_auth = gdm_face_auth_from_dconf();
         match (dconf_face_auth, override_exists) {
             (Some(false), true) => report.warning(
-                "GDM login face auth",
+                "GDM 登录人脸认证",
                 format!(
-                    "{GDM_FACE_OVERRIDE_PATH} enables it, but the compiled GDM dconf database still reports it disabled"
+                    "{GDM_FACE_OVERRIDE_PATH} 已启用该功能，但编译后的 GDM dconf 数据库仍报告为禁用"
                 ),
-                "Run `sudo dconf update`, then restart GDM (or reboot).",
+                "运行 `sudo dconf update`，然后重启 GDM（或重启系统）。",
             ),
             (Some(true), false) => report.pass(
-                "GDM login face auth",
-                "enabled in the GDM dconf profile by your system configuration, not by Gaze (on NixOS, `services.gaze.gnome.gdmFaceLogin`)",
+                "GDM 登录人脸认证",
+                "已通过系统配置在 GDM dconf 配置中启用，并非由 Gaze 启用（NixOS 中为 `services.gaze.gnome.gdmFaceLogin`）",
             ),
             (_, true) => match gdm_greeter_readiness() {
                 GdmGreeterReadiness::Ready => report.pass(
-                    "GDM login face auth",
+                    "GDM 登录人脸认证",
                     format!(
-                        "enabled system-wide via {GDM_FACE_OVERRIDE_PATH}; toggle it under Behavior -> GDM login screen in `gnome-extensions prefs {GNOME_EXTENSION_ID}`"
+                        "已通过 {GDM_FACE_OVERRIDE_PATH} 在系统范围启用；可在 `gnome-extensions prefs {GNOME_EXTENSION_ID}` 的“行为”->“GDM 登录界面”中切换"
                     ),
                 ),
                 GdmGreeterReadiness::ProfileMissingSystemDb => report.error(
-                    "GDM login face auth",
+                    "GDM 登录人脸认证",
                     format!(
-                        "{GDM_FACE_OVERRIDE_PATH} exists, but {GDM_DCONF_PROFILE_PATH} does not list `system-db:{GDM_DCONF_PROFILE}`, so GDM never reads it"
+                        "{GDM_FACE_OVERRIDE_PATH} 存在，但 {GDM_DCONF_PROFILE_PATH} 未列出 `system-db:{GDM_DCONF_PROFILE}`，因此 GDM 不会读取它"
                     ),
                     format!(
-                        "Add a `system-db:{GDM_DCONF_PROFILE}` line to {GDM_DCONF_PROFILE_PATH}, run `sudo dconf update`, then reboot."
+                        "在 {GDM_DCONF_PROFILE_PATH} 中添加 `system-db:{GDM_DCONF_PROFILE}` 行，运行 `sudo dconf update`，然后重启。"
                     ),
                 ),
                 GdmGreeterReadiness::CompiledDbMissing => report.error(
-                    "GDM login face auth",
+                    "GDM 登录人脸认证",
                     format!(
-                        "{GDM_FACE_OVERRIDE_PATH} exists, but the compiled database {GDM_COMPILED_DB_PATH} does not"
+                        "{GDM_FACE_OVERRIDE_PATH} 存在，但编译后的数据库 {GDM_COMPILED_DB_PATH} 不存在"
                     ),
-                    "Run `sudo dconf update`, then reboot.",
+                    "运行 `sudo dconf update`，然后重启。",
                 ),
                 GdmGreeterReadiness::ExtensionNotEnabled => report.error(
-                    "GDM login face auth",
+                    "GDM 登录人脸认证",
                     format!(
-                        "the GDM database does not enable {GNOME_EXTENSION_ID} for the greeter, so the login screen never starts the {GDM_FACE_PAM_SERVICE} PAM service"
+                        "GDM 数据库未为登录界面启用 {GNOME_EXTENSION_ID}，因此登录界面不会启动 {GDM_FACE_PAM_SERVICE} PAM 服务"
                     ),
-                    "Reinstall the Gaze GNOME extension package, run `sudo dconf update`, then reboot.",
+                    "重新安装 Gaze GNOME 扩展包，运行 `sudo dconf update`，然后重启。",
                 ),
                 GdmGreeterReadiness::ExtensionsDisabled(source) => report.error(
-                    "GDM login face auth",
+                    "GDM 登录人脸认证",
                     format!(
-                        "the greeter resolves `org.gnome.shell disable-user-extensions` to true, which switches off every GNOME Shell extension at the login screen, {GNOME_EXTENSION_ID} included"
+                        "登录界面将 `org.gnome.shell disable-user-extensions` 解析为 true，这会关闭登录界面的所有 GNOME Shell 扩展，包括 {GNOME_EXTENSION_ID}"
                     ),
                     match source {
                         Some(path) => format!(
-                            "{} holds that key and outranks every keyfile under /etc/dconf/db/gdm.d, so it has to be cleared there:\n\
-                             sudo rm -f {}\n\
-                             Then reboot. GDM writes the file again with its own defaults.",
+                            "{} 保存了该键，且优先级高于 /etc/dconf/db/gdm.d 下的所有键文件，因此必须在此处清除：\n    sudo rm -f {}\n然后重启。GDM 将使用自己的默认值重新写入该文件。",
                             path.display(),
                             path.display()
                         ),
                         None => format!(
-                            "Put `disable-user-extensions=false` under `[org/gnome/shell]` in {GDM_FACE_OVERRIDE_PATH}, run `sudo dconf update`, then reboot."
+                            "在 {GDM_FACE_OVERRIDE_PATH} 的 `[org/gnome/shell]` 中设置 `disable-user-extensions=false`，运行 `sudo dconf update`，然后重启。"
                         ),
                     },
                 ),
                 GdmGreeterReadiness::Unverifiable(why) => report.warning(
-                    "GDM login face auth",
+                    "GDM 登录人脸认证",
                     format!(
-                        "{GDM_FACE_OVERRIDE_PATH} enables it, but the greeter configuration could not be verified: {why}"
+                        "{GDM_FACE_OVERRIDE_PATH} 已启用该功能，但无法验证登录界面配置：{why}"
                     ),
-                    "Install the `dconf` command-line tool and re-run `gaze doctor`.",
+                    "安装 `dconf` 命令行工具，然后重新运行 `gaze doctor`。",
                 ),
             },
             (_, false) => report.off(
-                "GDM login face auth",
-                "off, so the login screen only takes your password (the lock screen is a separate switch)",
+                "GDM 登录人脸认证",
+                "已关闭，登录界面仅接受密码（锁屏使用独立开关）",
                 format!(
-                    "Turn it on: {}, then reboot. It asks for admin authorization and writes {GDM_FACE_OVERRIDE_PATH} for you.\n\
-                     By hand: put `enable-face-authentication=true` under `[org/gnome/shell/extensions/gaze]` in {GDM_FACE_OVERRIDE_PATH}, run `sudo dconf update`, then reboot.\n\
-                     Details: {GNOME_DOCS_URL}#optional-enable-face-at-gdm-login",
-                    gnome_prefs_path("GDM login screen", "Enable face auth at GDM login")
+                    "启用方法：{}，然后重启。这会请求管理员授权并写入 {GDM_FACE_OVERRIDE_PATH}。\n手动设置：在 {GDM_FACE_OVERRIDE_PATH} 的 `[org/gnome/shell/extensions/gaze]` 中添加 `enable-face-authentication=true`，运行 `sudo dconf update`，然后重启。\n详情：{GNOME_DOCS_URL}#optional-enable-face-at-gdm-login",
+                    gnome_prefs_path("GDM 登录界面", "在 GDM 登录时启用人脸认证")
                 ),
             ),
         }
@@ -232,16 +222,16 @@ pub(super) fn check_desktop_integration(report: &mut Report) {
         && Path::new("/usr/share/omarchy/shell/plugins/lock/manifest.json").exists();
     if omarchy {
         match command_output("gaze-omarchy", &["doctor"]) {
-            Ok((true, output)) => report.pass("Omarchy lock", output),
+            Ok((true, output)) => report.pass("Omarchy 锁屏", output),
             Ok((false, output)) => report.warning(
-                "Omarchy lock",
+                "Omarchy 锁屏",
                 output,
-                "Run `gaze-omarchy enable` from your unlocked desktop. See https://gaze.gundulabs.com/guide/omarchy",
+                "在已解锁的桌面中运行 `gaze-omarchy enable`。参见 https://gaze.gundulabs.com/guide/omarchy",
             ),
             Err(_) => report.warning(
-                "Omarchy lock",
-                "Gaze Omarchy integration is not installed",
-                "Install `gaze-omarchy` (`gaze-omarchy-bin` on Arch), then run `gaze-omarchy enable` without sudo.",
+                "Omarchy 锁屏",
+                "未安装 Gaze Omarchy 集成",
+                "安装 `gaze-omarchy`（Arch 中为 `gaze-omarchy-bin`），然后不使用 sudo 运行 `gaze-omarchy enable`。",
             ),
         }
     }
@@ -255,12 +245,12 @@ pub(super) fn check_desktop_integration(report: &mut Report) {
             .and_then(|path| fs::read_to_string(path).ok())
             .is_some_and(|contents| hyprlock_selects_gaze(&contents));
         if configured {
-            report.pass("hyprlock", "configured to use a Gaze PAM service");
+            report.pass("hyprlock", "已配置为使用 Gaze PAM 服务");
         } else {
             report.warning(
                 "hyprlock",
-                "the current user's hyprlock.conf does not select a Gaze PAM service",
-                "Set `module = hyprlock-gaze` in the hyprlock `auth { pam { ... } }` block.",
+                "当前用户的 hyprlock.conf 未选择 Gaze PAM 服务",
+                "在 hyprlock 的 `auth { pam { ... } }` 块中设置 `module = hyprlock-gaze`。",
             );
         }
     }
@@ -346,30 +336,30 @@ pub(super) fn check_kde_lock_screen(
     kde_fingerprint: Option<&str>,
     kde_smartcard: Option<&str>,
 ) {
-    const NAME: &str = "KDE lock screen";
+    const NAME: &str = "KDE 锁屏";
     let (status, file) = kde_lock_status(kde_fingerprint, kde_smartcard);
     let slot = file.trim_start_matches("/etc/pam.d/");
     match status {
         KdeLockStatus::Wired => report.pass(
             NAME,
             format!(
-                "{slot} runs Gaze, so face unlock starts on its own next to the password field"
+                "{slot} 运行 Gaze，人脸解锁会在密码框旁自动启动"
             ),
         ),
         KdeLockStatus::Grosshack => report.warning(
             NAME,
-            format!("{slot} runs pam_gaze.so in simultaneous mode, which waits for a password prompt that KScreenLocker can never answer"),
-            format!("Use sequential mode there: replace it with `-auth [success=done default=ignore] pam_gaze.so` in {file}, or reinstall gaze-kde."),
+            format!("{slot} 以 simultaneous 模式运行 pam_gaze.so，会等待 KScreenLocker 无法回答的密码提示"),
+            format!("此处应使用顺序模式：在 {file} 中替换为 `-auth [success=done default=ignore] pam_gaze.so`，或重新安装 gaze-kde。"),
         ),
         KdeLockStatus::NotWired => report.warning(
             NAME,
-            format!("{file} does not run Gaze, so face auth only starts after you submit the password field"),
-            "Install the gaze-kde package, or run `sudo gaze-kde-pam enable`.",
+            format!("{file} 未运行 Gaze，人脸认证只会在提交密码框后开始"),
+            "安装 gaze-kde 软件包，或运行 `sudo gaze-kde-pam enable`。",
         ),
         KdeLockStatus::NoService => report.warning(
             NAME,
-            format!("{file} does not exist, so KScreenLocker has no biometric slot to start"),
-            "Install the gaze-kde package, or run `sudo gaze-kde-pam enable`, which creates it.",
+            format!("{file} 不存在，KScreenLocker 没有可启动的生物识别认证入口"),
+            "安装 gaze-kde 软件包，或运行 `sudo gaze-kde-pam enable` 创建该文件。",
         ),
     }
 }
@@ -378,20 +368,20 @@ pub(super) fn check_kde_lock_screen(
 /// service. Otherwise, face authentication begins after submission, as it does
 /// for a fingerprint reader.
 pub(super) fn check_kde_login_greeter(report: &mut Report, plasmalogin_face: Option<&str>) {
-    const NAME: &str = "KDE login greeter";
+    const NAME: &str = "KDE 登录界面";
     match plasmalogin_face {
         None => report.pass(
             NAME,
-            "no up-front biometric service upstream, so face auth runs when you submit the login form (press Enter on an empty password field)",
+            "上游不提供提前启动的生物识别服务，人脸认证会在提交登录表单时运行（密码框为空时按 Enter）",
         ),
         Some(contents) if slot_status(Some(contents)) == KdeLockStatus::Wired => report.pass(
             NAME,
-            "plasmalogin-fingerprint runs Gaze, so face auth starts as soon as the greeter shows your user",
+            "plasmalogin-fingerprint 运行 Gaze，登录界面显示您的用户后即可开始人脸认证",
         ),
         Some(_) => report.warning(
             NAME,
-            format!("{PLASMALOGIN_FACE_PAM_FILE} exists but does not run Gaze, so face auth at the greeter waits for you to submit the form"),
-            "Run `sudo gaze-kde-pam enable-login` to scan before you type.",
+            format!("{PLASMALOGIN_FACE_PAM_FILE} 存在但未运行 Gaze，登录界面的人脸认证需等待提交表单"),
+            "运行 `sudo gaze-kde-pam enable-login`，即可在输入前开始扫描。",
         ),
     }
 }
@@ -408,7 +398,7 @@ pub(super) fn check_kde_confirmation_bypass(
     kde_smartcard: Option<&str>,
     plasmalogin_face: Option<&str>,
 ) {
-    const NAME: &str = "KDE confirmation";
+    const NAME: &str = "KDE 确认";
     let Some(config) = config else {
         return;
     };
@@ -432,10 +422,10 @@ pub(super) fn check_kde_confirmation_bypass(
     report.warning(
         NAME,
         format!(
-            "require_confirmation_lock_screen is on, but {} cannot be prompted, so a face match unlocks without confirmation there",
+            "require_confirmation_lock_screen 已开启，但 {} 无法显示可交互的提示，因此匹配到人脸后会直接解锁，无需确认",
             bypassed.join(", ")
         ),
-        "This is by design: the greeter never delivers a response to a noninteractive slot, so asking would hang it for the rest of the lock. Leave the toggle for surfaces that can prompt (sudo with a TTY, polkit, GNOME), or turn it off if the KDE bypass surprises you. See the KDE guide.",
+        "这是设计行为：登录界面不会向非交互式认证入口传递响应，发出询问会使其在本次锁屏期间一直挂起。可保留此开关用于能够交互的界面（带 TTY 的 sudo、polkit、GNOME）；如果您不希望 KDE 跳过确认，也可以关闭它。参见 KDE 指南。",
     );
 }
 
@@ -562,7 +552,7 @@ mod tests {
             report
                 .checks
                 .iter()
-                .find(|check| check.name == "KDE lock screen")
+                .find(|check| check.name == "KDE 锁屏")
                 .map(|check| check.level)
                 .expect("the KDE lock screen check always reports")
         };
@@ -606,7 +596,7 @@ mod tests {
             report
                 .checks
                 .iter()
-                .find(|check| check.name == "KDE confirmation")
+                .find(|check| check.name == "KDE 确认")
                 .map(|check| (check.level, check.message.clone()))
         };
 
@@ -644,7 +634,7 @@ mod tests {
             report
                 .checks
                 .iter()
-                .find(|check| check.name == "KDE login greeter")
+                .find(|check| check.name == "KDE 登录界面")
                 .map(|check| check.level)
                 .expect("the KDE login greeter check always reports")
         };

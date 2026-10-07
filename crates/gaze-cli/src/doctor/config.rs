@@ -7,39 +7,39 @@ pub(super) fn check_systemd(report: &mut Report) {
     if !Path::new("/run/systemd/system").exists() {
         report.warning(
             "systemd",
-            "systemd is not running, so the gazed service state could not be checked",
-            "On a normal installation, boot with systemd and run `systemctl status gazed`.",
+            "systemd 未运行，无法检查 gazed 服务状态",
+            "在常规安装环境中，使用 systemd 启动并运行 `systemctl status gazed`。",
         );
         return;
     }
 
     match command_output("systemctl", &["is-active", "gazed"]) {
-        Ok((true, state)) if state == "active" => report.pass("Service", "gazed is active"),
+        Ok((true, state)) if state == "active" => report.pass("服务", "gazed 正在运行"),
         Ok((_, state)) => report.error(
-            "Service",
-            format!("gazed is {state}"),
-            "Run `sudo systemctl enable --now gazed`, then inspect `journalctl -u gazed -n 100 --no-pager` if it fails.",
+            "服务",
+            format!("gazed 的状态为 {state}"),
+            "运行 `sudo systemctl enable --now gazed`；如失败，请查看 `journalctl -u gazed -n 100 --no-pager`。",
         ),
         Err(err) => report.error(
-            "Service",
-            format!("could not query gazed: {err}"),
-            "Run `systemctl status gazed`.",
+            "服务",
+            format!("无法查询 gazed：{err}"),
+            "运行 `systemctl status gazed`。",
         ),
     }
 
     match command_output("systemctl", &["is-enabled", "gazed"]) {
         Ok((true, state)) if state == "enabled" => {
-            report.pass("Autostart", "gazed is enabled at boot");
+            report.pass("自动启动", "gazed 已启用开机启动");
         }
         Ok((_, state)) => report.warning(
-            "Autostart",
-            format!("gazed is {state}"),
-            "Run `sudo systemctl enable gazed` so authentication still works after reboot.",
+            "自动启动",
+            format!("gazed 的状态为 {state}"),
+            "运行 `sudo systemctl enable gazed`，使重启后仍可使用认证。",
         ),
         Err(err) => report.warning(
-            "Autostart",
-            format!("could not query gazed enablement: {err}"),
-            "Run `systemctl is-enabled gazed`.",
+            "自动启动",
+            format!("无法查询 gazed 的启用状态：{err}"),
+            "运行 `systemctl is-enabled gazed`。",
         ),
     }
 }
@@ -48,9 +48,9 @@ pub(super) fn check_config(report: &mut Report) -> Option<Config> {
     let path = Path::new(CONFIG_PATH);
     if !path.exists() {
         report.error(
-            "Configuration",
-            format!("{CONFIG_PATH} does not exist"),
-            "Reinstall Gaze or restore the packaged config file.",
+            "配置",
+            format!("{CONFIG_PATH} 不存在"),
+            "重新安装 Gaze 或恢复软件包提供的配置文件。",
         );
         return None;
     }
@@ -63,18 +63,15 @@ pub(super) fn check_config(report: &mut Report) -> Option<Config> {
                 .map(|contents| unknown_config_keys(&contents))
                 .unwrap_or_default();
             if unknown.is_empty() {
-                report.pass(
-                    "Configuration",
-                    format!("{CONFIG_PATH} parses successfully"),
-                );
+                report.pass("配置", format!("{CONFIG_PATH} 解析成功"));
             } else {
                 report.warning(
-                    "Configuration",
+                    "配置",
                     format!(
-                        "{CONFIG_PATH} parses, but Gaze does not read: {}",
+                        "{CONFIG_PATH} 可以解析，但 Gaze 不读取以下配置项：{}",
                         unknown.join(", ")
                     ),
-                    "Remove or correct those keys; they have no effect, so a misspelled setting is silently off.",
+                    "删除或修正这些键；它们不会生效，因此拼写错误的设置会被忽略。",
                 );
             }
             config
@@ -85,18 +82,18 @@ pub(super) fn check_config(report: &mut Report) -> Option<Config> {
                 .is_some_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied) =>
         {
             report.pass(
-                "Configuration",
+                "配置",
                 format!(
-                    "{CONFIG_PATH} is not readable here; values are checked through gazed, but the file itself is not inspected for unknown keys"
+                    "此处无法读取 {CONFIG_PATH}；已通过 gazed 检查配置值，但未检查文件中的未知键"
                 ),
             );
             return None;
         }
         Err(err) => {
             report.error(
-                "Configuration",
-                format!("could not load {CONFIG_PATH}: {err}"),
-                "Check the file and fix its TOML syntax, then run `sudo systemctl restart gazed`.",
+                "配置",
+                format!("无法加载 {CONFIG_PATH}：{err}"),
+                "检查文件并修正 TOML 语法，然后运行 `sudo systemctl restart gazed`。",
             );
             return None;
         }
@@ -115,27 +112,27 @@ pub(super) fn check_config_permissions(report: &mut Report, path: &Path) {
             let mode = metadata.mode() & 0o777;
             if metadata.uid() != 0 {
                 report.error(
-                    "Config ownership",
-                    format!("{CONFIG_PATH} is owned by UID {}", metadata.uid()),
-                    format!("Run `sudo chown root:root {CONFIG_PATH}`."),
+                    "配置所有权",
+                    format!("{CONFIG_PATH} 的所有者 UID 为 {}", metadata.uid()),
+                    format!("运行 `sudo chown root:root {CONFIG_PATH}`。"),
                 );
             } else if mode & 0o022 != 0 {
                 report.error(
-                    "Config permissions",
-                    format!("{CONFIG_PATH} has writable mode {mode:o}"),
-                    format!("Run `sudo chmod 0644 {CONFIG_PATH}`."),
+                    "配置权限",
+                    format!("{CONFIG_PATH} 的权限模式 {mode:o} 允许写入"),
+                    format!("运行 `sudo chmod 0644 {CONFIG_PATH}`。"),
                 );
             } else {
                 report.pass(
-                    "Config permissions",
-                    format!("root-owned and not writable by group or others ({mode:o})"),
+                    "配置权限",
+                    format!("由 root 所有，且组和其他用户不可写（{mode:o}）"),
                 );
             }
         }
         Err(err) => report.error(
-            "Config permissions",
-            format!("could not inspect {CONFIG_PATH}: {err}"),
-            format!("Run `sudo stat {CONFIG_PATH}`."),
+            "配置权限",
+            format!("无法检查 {CONFIG_PATH}：{err}"),
+            format!("运行 `sudo stat {CONFIG_PATH}`。"),
         ),
     }
 }
@@ -145,7 +142,7 @@ pub(super) fn config_findings(config: &Config) -> Vec<Check> {
     let mut error = |message: String, fix: &'static str| {
         findings.push(Check {
             level: Level::Error,
-            name: "Config values",
+            name: "配置值",
             message,
             fix: Some(fix.to_string()),
         });
@@ -154,29 +151,29 @@ pub(super) fn config_findings(config: &Config) -> Vec<Check> {
     for err in config.security.validation_errors() {
         let fix = match err.field {
             SecurityField::Level | SecurityField::ModelQuality => {
-                "Choose a supported security level with `gaze config`."
+                "使用 `gaze config` 选择受支持的安全级别。"
             }
             SecurityField::Threshold => {
-                "Set valid custom RGB and IR thresholds in /etc/gaze/config.toml."
+                "在 /etc/gaze/config.toml 中设置有效的自定义 RGB 和红外阈值。"
             }
-            SecurityField::HybridPolicy => "Use default, or, fallback_on_dark, or and.",
+            SecurityField::HybridPolicy => "使用 default、or、fallback_on_dark 或 and。",
         };
         error(err.message, fix);
     }
     if let Err(err) = config.enrollment.validate() {
         error(
             err.to_string(),
-            "Set enrollment.min_face_size_ratio to a value from 0.10 through 0.75.",
+            "将 enrollment.min_face_size_ratio 设为 0.10 至 0.75 之间的值。",
         );
     }
     if let Err(err) = config.cameras.validate() {
         error(
             err.to_string(),
-            "Use never, auto, or always for cameras.parallel_capture.",
+            "将 cameras.parallel_capture 设为 never、auto 或 always。",
         );
     }
     if let Err(err) = config.inference.validate() {
-        let fix = "Use cpu/cpu, auto/npu, openvino/cpu, openvino/gpu, openvino/npu, or vitis/npu in [inference].";
+        let fix = "在 [inference] 中使用 cpu/cpu、auto/npu、openvino/cpu、openvino/gpu、openvino/npu 或 vitis/npu。";
         error(err.to_string(), fix);
     }
 
@@ -184,21 +181,21 @@ pub(super) fn config_findings(config: &Config) -> Vec<Check> {
     let ir = config.cameras.ir.trim();
     if rgb.is_empty() && ir.is_empty() {
         error(
-            "both cameras.rgb and cameras.ir are empty".to_string(),
-            "Set cameras.rgb to \"primary\" or configure an IR camera.",
+            "cameras.rgb 和 cameras.ir 均为空".to_string(),
+            "将 cameras.rgb 设为 \"primary\"，或配置红外摄像头。",
         );
     }
     if let Some(index) = rgb.strip_prefix("/dev/video") {
         if index.is_empty() || !index.chars().all(|c| c.is_ascii_digit()) {
             error(
-                format!("invalid RGB camera node {rgb:?}"),
-                "Use /dev/video<number>, usb:VVVV:PPPP, \"primary\", or a GStreamer source.",
+                format!("RGB 摄像头节点 {rgb:?} 无效"),
+                "使用 /dev/video<number>、usb:VVVV:PPPP、\"primary\" 或 GStreamer 来源。",
             );
         }
     } else if rgb.starts_with("usb:") && gaze_vision::camera::parse_usb_spec(rgb).is_none() {
         error(
-            format!("invalid RGB USB spec {rgb:?}"),
-            "Use usb:VVVV:PPPP with hex VID:PID, for example usb:046d:085e.",
+            format!("RGB USB 规格 {rgb:?} 无效"),
+            "使用十六进制 VID:PID 格式 usb:VVVV:PPPP，例如 usb:046d:085e。",
         );
     }
 
@@ -209,10 +206,10 @@ pub(super) fn config_findings(config: &Config) -> Vec<Check> {
         {
             error(
                 format!(
-                    "liveness.threshold must be between {MIN_LIVENESS_THRESHOLD} and {MAX_LIVENESS_THRESHOLD}, got {}",
+                    "liveness.threshold 必须介于 {MIN_LIVENESS_THRESHOLD} 和 {MAX_LIVENESS_THRESHOLD} 之间，当前为 {}",
                     config.liveness.threshold
                 ),
-                "Set liveness.threshold to a value between 0.10 and 1.0.",
+                "将 liveness.threshold 设为 0.10 至 1.0 之间的值。",
             );
         }
         if !config.liveness.max_seconds.is_finite()
@@ -221,10 +218,10 @@ pub(super) fn config_findings(config: &Config) -> Vec<Check> {
         {
             error(
                 format!(
-                    "liveness.max_seconds must be between {MIN_LIVENESS_MAX_SECONDS} and {MAX_LIVENESS_MAX_SECONDS}, got {}",
+                    "liveness.max_seconds 必须介于 {MIN_LIVENESS_MAX_SECONDS} 和 {MAX_LIVENESS_MAX_SECONDS} 之间，当前为 {}",
                     config.liveness.max_seconds
                 ),
-                "Set liveness.max_seconds to a value between 0.2 and 30.0 (the default is 2.0).",
+                "将 liveness.max_seconds 设为 0.2 至 30.0 之间的值（默认为 2.0）。",
             );
         }
     }
@@ -232,9 +229,8 @@ pub(super) fn config_findings(config: &Config) -> Vec<Check> {
     if findings.is_empty() {
         findings.push(Check {
             level: Level::Pass,
-            name: "Config values",
-            message: "camera, security, enrollment, inference, and liveness values are valid"
-                .to_string(),
+            name: "配置值",
+            message: "摄像头、安全、录入、推理和活体检测的配置值有效".to_string(),
             fix: None,
         });
     }
@@ -242,21 +238,19 @@ pub(super) fn config_findings(config: &Config) -> Vec<Check> {
     if config.cameras.emitter_enabled && ir.is_empty() {
         findings.push(Check {
             level: Level::Warning,
-            name: "IR emitter",
-            message: "cameras.emitter_enabled is true but cameras.ir is empty".to_string(),
-            fix: Some("Configure cameras.ir or disable emitter_enabled.".to_string()),
+            name: "红外发射器",
+            message: "cameras.emitter_enabled 为 true，但 cameras.ir 为空".to_string(),
+            fix: Some("配置 cameras.ir 或禁用 emitter_enabled。".to_string()),
         });
     }
     if config.cameras.parallel_capture() == "always" && !ir.is_empty() {
         findings.push(Check {
             level: Level::Warning,
-            name: "Parallel capture",
-            message: "cameras.parallel_capture is \"always\", which streams RGB and IR at once \
-                      without checking that the camera supports it"
+            name: "并行采集",
+            message: "cameras.parallel_capture 为 \"always\"，将同时输出 RGB 和红外画面，而不检查摄像头是否支持"
                 .to_string(),
             fix: Some(
-                "If hybrid auth starts failing with \"IR camera stream stopped unexpectedly\", \
-                 use \"auto\" or \"never\"."
+                "如果混合认证开始报错“红外摄像头数据流意外停止”，请使用 \"auto\" 或 \"never\"。"
                     .to_string(),
             ),
         });
@@ -264,22 +258,17 @@ pub(super) fn config_findings(config: &Config) -> Vec<Check> {
     if !config.liveness.enabled {
         findings.push(Check {
             level: Level::Warning,
-            name: "Liveness",
-            message: "anti-spoofing is disabled".to_string(),
-            fix: Some(
-                "Enable [liveness] unless you intentionally accept photo/screen spoofing risk."
-                    .to_string(),
-            ),
+            name: "活体检测",
+            message: "防伪检测已禁用".to_string(),
+            fix: Some("请启用 [liveness]，除非您有意接受照片或屏幕欺骗的风险。".to_string()),
         });
     }
     if config.enrollment.max_templates == 0 {
         findings.push(Check {
             level: Level::Warning,
-            name: "Enrollment limit",
-            message: "max_templates is zero, which disables template eviction".to_string(),
-            fix: Some(
-                "Set enrollment.max_templates to a positive value (the default is 2).".into(),
-            ),
+            name: "录入数量限制",
+            message: "max_templates 为零，已禁用模板淘汰".to_string(),
+            fix: Some("将 enrollment.max_templates 设为正数（默认为 2）。".into()),
         });
     }
 
@@ -333,7 +322,7 @@ mod tests {
         assert!(
             messages
                 .iter()
-                .any(|message| message.contains("invalid RGB camera node"))
+                .any(|message| message.contains("RGB 摄像头节点"))
         );
         assert!(
             messages
@@ -418,7 +407,7 @@ mod tests {
                 .and_then(|check| check.fix)
                 .unwrap_or_default()
         };
-        assert!(fix_for("security.rgb_threshold").contains("custom RGB and IR thresholds"));
+        assert!(fix_for("security.rgb_threshold").contains("自定义 RGB 和红外阈值"));
         assert!(fix_for("security.hybrid_policy").contains("fallback_on_dark"));
     }
 }

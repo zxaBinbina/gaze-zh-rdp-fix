@@ -4,7 +4,7 @@
 use crate::capture_dialog;
 use gaze_core::config::{
     AuthConfig, CameraConfig, Config, DEFAULT_RGB_CAMERA, HYBRID_POLICY_LABELS,
-    INFERENCE_DEVICE_OPTIONS, INFERENCE_EXECUTION_PROVIDER_OPTIONS, InferenceConfig,
+      InferenceConfig,
     MAX_ENROLLMENT_FACE_SIZE_RATIO, MAX_IR_FRAME_DIMENSION, MAX_LIVENESS_MAX_SECONDS,
     MIN_ENROLLMENT_FACE_SIZE_RATIO, MIN_LIVENESS_MAX_SECONDS, MODEL_QUALITY_LABELS,
     PARALLEL_CAPTURE_LABELS, SECURITY_LEVEL_LABELS, START_DELAY_SCOPE_LABELS, SecurityLevel,
@@ -75,7 +75,7 @@ fn add_dbus_error_toast(window: &libadwaita::ApplicationWindow, prefix: &str, er
 }
 
 fn show_daemon_pending_toast(window: &libadwaita::ApplicationWindow) {
-    add_toast(window, "Connecting to the Gaze daemon…");
+    add_toast(window, "正在连接 Gaze 守护进程…");
 }
 
 async fn authorize_face_enrollment() -> anyhow::Result<()> {
@@ -92,7 +92,7 @@ async fn authorize_face_enrollment() -> anyhow::Result<()> {
         )
         .await?;
     if !result.is_authorized {
-        anyhow::bail!("authorization was cancelled or denied");
+        anyhow::bail!("授权已取消或被拒绝");
     }
     Ok(())
 }
@@ -115,7 +115,7 @@ async fn begin_face_capture(
     {
         futures::future::Either::Left((Ok(()), _)) => true,
         futures::future::Either::Left((Err(err), _)) => {
-            add_toast(window, format!("Face enrollment: {err}"));
+            add_toast(window, format!("人脸录入：{err}"));
             return;
         }
         futures::future::Either::Right(_) => false,
@@ -128,19 +128,19 @@ async fn begin_face_capture(
     let feed = match capture_dialog::prepare_camera_feed(&camera) {
         Ok(feed) => feed,
         Err(err) => {
-            add_toast(window, format!("Failed to start camera: {err}"));
+            add_toast(window, format!("无法启动摄像头：{err}"));
             return;
         }
     };
 
     if !authorization_done && let Err(err) = authorization.await {
         feed.stop();
-        add_toast(window, format!("Face enrollment: {err}"));
+        add_toast(window, format!("人脸录入：{err}"));
         return;
     }
     if let Err(err) = proxy.claim(username).await {
         feed.stop();
-        add_dbus_error_toast(window, "Failed to claim device", &err);
+        add_dbus_error_toast(window, "无法取得设备使用权", &err);
         return;
     }
 
@@ -313,7 +313,7 @@ fn drain_config_apply_queue(queue: &ApplyQueue) {
                 let write = queue.borrow().write.clone();
                 if let Err(e) = write(cfg).await {
                     let report_error = queue.borrow().report_error.clone();
-                    report_error(format!("Failed to apply config: {e}"));
+                    report_error(format!("无法应用配置：{e}"));
                 }
             }
             queue.borrow_mut().in_flight = false;
@@ -419,9 +419,7 @@ fn camera_subtitle(options: &[(String, String)], configured: &str) -> Option<Str
     if is_listed_source(options, configured) {
         None
     } else {
-        Some(format!(
-            "Configured as {configured}, which this list cannot show"
-        ))
+        Some(format!("已配置为 {configured}，此列表无法显示该值"))
     }
 }
 
@@ -443,10 +441,10 @@ fn populate_config_rows(cfg: &Config, rows: &ConfigRows, choices: CameraChoices<
         .set_selected(cfg.inference.device_index());
     if cfg.inference.is_representable() {
         rows.inference_execution_provider
-            .set_subtitle("CPU, automatic NPU, Intel OpenVINO, or AMD Ryzen AI");
+            .set_subtitle("CPU、自动选择 NPU、Intel OpenVINO 或 AMD Ryzen AI");
     } else {
         rows.inference_execution_provider.set_subtitle(&format!(
-            "Configured as {}/{}, which this build cannot show",
+            "已配置为 {}/{}，此版本无法显示该值",
             cfg.inference.execution_provider, cfg.inference.device
         ));
     }
@@ -552,7 +550,7 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
     let window = libadwaita::Window::builder()
         .transient_for(parent)
         .modal(true)
-        .title("Configuration")
+        .title("配置")
         .default_width(600)
         .default_height(700)
         .build();
@@ -561,8 +559,8 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
     let header_bar = libadwaita::HeaderBar::new();
     toolbar_view.add_top_bar(&header_bar);
 
-    let banner = libadwaita::Banner::new("Settings are locked");
-    banner.set_button_label(Some("Unlock…"));
+    let banner = libadwaita::Banner::new("设置已锁定");
+    banner.set_button_label(Some("解锁…"));
     toolbar_view.add_top_bar(&banner);
 
     let scrolled = gtk4::ScrolledWindow::builder()
@@ -578,24 +576,24 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
     banner.set_revealed(true);
 
     let security_group = libadwaita::PreferencesGroup::new();
-    security_group.set_title("Security");
+    security_group.set_title("安全");
     page.add(&security_group);
 
     let level_row = libadwaita::ComboRow::new();
-    level_row.set_title("Security Level");
-    level_row.set_subtitle("Adjust the balance between speed and security");
+    level_row.set_title("安全级别");
+    level_row.set_subtitle("调整速度与安全性之间的平衡");
     let level_model = gtk4::StringList::new(&SECURITY_LEVEL_LABELS);
     level_row.set_model(Some(&level_model));
     security_group.add(&level_row);
 
     let detector_row = libadwaita::ComboRow::new();
-    detector_row.set_title("Detector Level");
+    detector_row.set_title("检测器级别");
     let detector_model = gtk4::StringList::new(&MODEL_QUALITY_LABELS);
     detector_row.set_model(Some(&detector_model));
     security_group.add(&detector_row);
 
     let recognizer_row = libadwaita::ComboRow::new();
-    recognizer_row.set_title("Recognizer Level");
+    recognizer_row.set_title("识别器级别");
     let recognizer_model = gtk4::StringList::new(&MODEL_QUALITY_LABELS);
     recognizer_row.set_model(Some(&recognizer_model));
     security_group.add(&recognizer_row);
@@ -612,44 +610,38 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
         row
     };
 
-    let rgb_threshold_row = make_threshold_row(
-        "RGB Recognizer Threshold",
-        "Minimum RGB similarity for a match",
-    );
+    let rgb_threshold_row = make_threshold_row("RGB 识别阈值", "RGB 匹配所需的最低相似度");
     security_group.add(&rgb_threshold_row);
 
-    let ir_threshold_row = make_threshold_row(
-        "IR Recognizer Threshold",
-        "Minimum IR similarity for a match",
-    );
+    let ir_threshold_row = make_threshold_row("红外识别阈值", "红外匹配所需的最低相似度");
     security_group.add(&ir_threshold_row);
 
     let hardware_group = libadwaita::PreferencesGroup::new();
-    hardware_group.set_title("Hardware");
+    hardware_group.set_title("硬件");
     page.add(&hardware_group);
 
     let inference_execution_provider_row = libadwaita::ComboRow::new();
-    inference_execution_provider_row.set_title("Inference execution provider");
+    inference_execution_provider_row.set_title("推理执行后端");
     inference_execution_provider_row
-        .set_subtitle("CPU, automatic NPU, Intel OpenVINO, or AMD Ryzen AI");
+        .set_subtitle("CPU、自动选择 NPU、Intel OpenVINO 或 AMD Ryzen AI");
     let inference_execution_provider_model =
-        gtk4::StringList::new(&INFERENCE_EXECUTION_PROVIDER_OPTIONS);
+        gtk4::StringList::new(&gaze_core::config::INFERENCE_EXECUTION_PROVIDER_LABELS);
     inference_execution_provider_row.set_model(Some(&inference_execution_provider_model));
     hardware_group.add(&inference_execution_provider_row);
 
     let inference_device_row = libadwaita::ComboRow::new();
-    inference_device_row.set_title("OpenVINO inference device");
-    inference_device_row.set_subtitle("The Intel device used for all ONNX models");
-    let inference_device_model = gtk4::StringList::new(&INFERENCE_DEVICE_OPTIONS);
+    inference_device_row.set_title("OpenVINO 推理设备");
+    inference_device_row.set_subtitle("所有 ONNX 模型使用的 Intel 设备");
+    let inference_device_model = gtk4::StringList::new(&gaze_core::config::INFERENCE_DEVICE_LABELS);
     inference_device_row.set_model(Some(&inference_device_model));
     hardware_group.add(&inference_device_row);
 
     let cameras = gaze_vision::camera::enumerate_cameras()
-        .unwrap_or_else(|_| vec![("Primary Camera".to_string(), DEFAULT_RGB_CAMERA.to_string())]);
+        .unwrap_or_else(|_| vec![("主摄像头".to_string(), DEFAULT_RGB_CAMERA.to_string())]);
     let cam_names = cameras.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>();
 
     let camera_row = libadwaita::ComboRow::new();
-    camera_row.set_title("RGB Camera Source");
+    camera_row.set_title("RGB 摄像头来源");
     let cam_model =
         gtk4::StringList::new(&cam_names.iter().map(|s| s.as_str()).collect::<Vec<_>>());
     camera_row.set_model(Some(&cam_model));
@@ -662,15 +654,14 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
         .collect::<Vec<_>>();
 
     let ir_row = libadwaita::ComboRow::new();
-    ir_row.set_title("IR Camera Source");
+    ir_row.set_title("红外摄像头来源");
     let ir_model = gtk4::StringList::new(&ir_names.iter().map(|s| s.as_str()).collect::<Vec<_>>());
     ir_row.set_model(Some(&ir_model));
     hardware_group.add(&ir_row);
 
     let ir_frame_size_row = libadwaita::ExpanderRow::new();
-    ir_frame_size_row.set_title("IR Frame Size Override");
-    ir_frame_size_row
-        .set_subtitle("Force one resolution if the IR feed is green or corrupted on auto");
+    ir_frame_size_row.set_title("指定红外画面尺寸");
+    ir_frame_size_row.set_subtitle("自动模式下红外画面发绿或损坏时，强制使用指定分辨率");
     ir_frame_size_row.set_show_enable_switch(true);
     ir_frame_size_row.set_enable_expansion(false);
     hardware_group.add(&ir_frame_size_row);
@@ -678,47 +669,45 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
     let ir_frame_width_row =
         libadwaita::SpinRow::with_range(1.0, MAX_IR_FRAME_DIMENSION as f64, 1.0);
     ir_frame_width_row.set_digits(0);
-    ir_frame_width_row.set_title("Width");
+    ir_frame_width_row.set_title("宽度");
     ir_frame_width_row.set_value(640.0);
     ir_frame_size_row.add_row(&ir_frame_width_row);
 
     let ir_frame_height_row =
         libadwaita::SpinRow::with_range(1.0, MAX_IR_FRAME_DIMENSION as f64, 1.0);
     ir_frame_height_row.set_digits(0);
-    ir_frame_height_row.set_title("Height");
+    ir_frame_height_row.set_title("高度");
     ir_frame_height_row.set_value(480.0);
     ir_frame_size_row.add_row(&ir_frame_height_row);
 
     let emitter_row = libadwaita::ActionRow::new();
-    emitter_row.set_title("Force IR Emitter");
-    emitter_row
-        .set_subtitle("Override emitter control (only use if camera stays unlit automatically)");
+    emitter_row.set_title("强制开启红外发射器");
+    emitter_row.set_subtitle("覆盖发射器控制（仅在摄像头无法自动亮起时使用）");
     let emitter_switch = gtk4::Switch::new();
     emitter_switch.set_valign(gtk4::Align::Center);
     emitter_row.add_suffix(&emitter_switch);
     hardware_group.add(&emitter_row);
 
     let parallel_capture_row = libadwaita::ComboRow::new();
-    parallel_capture_row.set_title("Parallel RGB + IR Capture");
-    parallel_capture_row
-        .set_subtitle("Faster hybrid auth, but some webcams cannot stream both sensors at once");
+    parallel_capture_row.set_title("并行采集 RGB 和红外画面");
+    parallel_capture_row.set_subtitle("加快混合认证，但部分摄像头无法同时输出两个传感器的画面");
     let parallel_capture_model = gtk4::StringList::new(&PARALLEL_CAPTURE_LABELS);
     parallel_capture_row.set_model(Some(&parallel_capture_model));
     hardware_group.add(&parallel_capture_row);
 
     let dark_luma_threshold_row = libadwaita::SpinRow::with_range(0.0, 255.0, 1.0);
     dark_luma_threshold_row.set_digits(0);
-    dark_luma_threshold_row.set_title("Darkness Cutoff");
-    dark_luma_threshold_row.set_subtitle("Reject frames below this mean brightness (0-255)");
+    dark_luma_threshold_row.set_title("暗光阈值");
+    dark_luma_threshold_row.set_subtitle("拒绝平均亮度低于此值的帧（0–255）");
     hardware_group.add(&dark_luma_threshold_row);
 
     let enrollment_group = libadwaita::PreferencesGroup::new();
-    enrollment_group.set_title("Enrollment");
+    enrollment_group.set_title("录入");
     page.add(&enrollment_group);
 
     let templates_row = libadwaita::SpinRow::with_range(1.0, 50.0, 1.0);
-    templates_row.set_title("Maximum Templates");
-    templates_row.set_subtitle("Number of capture sets stored per face");
+    templates_row.set_title("模板数量上限");
+    templates_row.set_subtitle("每个人脸保存的采集组数");
     enrollment_group.add(&templates_row);
 
     let min_face_size_ratio_row = libadwaita::SpinRow::with_range(
@@ -727,18 +716,17 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
         0.01,
     );
     min_face_size_ratio_row.set_digits(2);
-    min_face_size_ratio_row.set_title("Minimum Face Size Ratio");
-    min_face_size_ratio_row
-        .set_subtitle("Smallest accepted face during enrollment; lower allows more distance");
+    min_face_size_ratio_row.set_title("最小人脸尺寸比例");
+    min_face_size_ratio_row.set_subtitle("录入时允许的最小人脸尺寸；降低此值可增加距离");
     enrollment_group.add(&min_face_size_ratio_row);
 
     let liveness_group = libadwaita::PreferencesGroup::new();
-    liveness_group.set_title("Liveness Anti-Spoofing");
+    liveness_group.set_title("活体防伪");
     page.add(&liveness_group);
 
     let liveness_enabled_row = libadwaita::ActionRow::new();
-    liveness_enabled_row.set_title("Enable Liveness Spoof Prevention");
-    liveness_enabled_row.set_subtitle("Analyze face depth/reflectance to prevent photo spoofing");
+    liveness_enabled_row.set_title("启用活体防伪检测");
+    liveness_enabled_row.set_subtitle("分析人脸深度和反射特征，防止照片欺骗");
     let liveness_enabled_switch = gtk4::Switch::new();
     liveness_enabled_switch.set_valign(gtk4::Align::Center);
     liveness_enabled_row.add_suffix(&liveness_enabled_switch);
@@ -750,61 +738,58 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
         0.01,
     );
     liveness_threshold_row.set_digits(3);
-    liveness_threshold_row.set_title("Liveness Threshold");
-    liveness_threshold_row.set_subtitle("Minimum spoof prevention confidence");
+    liveness_threshold_row.set_title("活体检测阈值");
+    liveness_threshold_row.set_subtitle("防伪检测所需的最低置信度");
     liveness_group.add(&liveness_threshold_row);
 
     let liveness_max_seconds_row =
         libadwaita::SpinRow::with_range(MIN_LIVENESS_MAX_SECONDS, MAX_LIVENESS_MAX_SECONDS, 0.1);
     liveness_max_seconds_row.set_digits(1);
-    liveness_max_seconds_row.set_title("Maximum Liveness Duration");
-    liveness_max_seconds_row.set_subtitle("Maximum seconds analyzed for liveness verification");
+    liveness_max_seconds_row.set_title("最长活体检测时间");
+    liveness_max_seconds_row.set_subtitle("活体检测分析的最长秒数");
     liveness_group.add(&liveness_max_seconds_row);
 
     let auth_group = libadwaita::PreferencesGroup::new();
-    auth_group.set_title("Authentication");
+    auth_group.set_title("认证");
     page.add(&auth_group);
 
     let abort_ssh_row = libadwaita::ActionRow::new();
-    abort_ssh_row.set_title("Abort if SSH");
-    abort_ssh_row.set_subtitle("Prevent authentication over SSH connections");
+    abort_ssh_row.set_title("SSH 连接时中止");
+    abort_ssh_row.set_subtitle("阻止通过 SSH 连接进行认证");
     let abort_ssh_switch = gtk4::Switch::new();
     abort_ssh_switch.set_valign(gtk4::Align::Center);
     abort_ssh_row.add_suffix(&abort_ssh_switch);
     auth_group.add(&abort_ssh_row);
 
     let abort_lid_row = libadwaita::ActionRow::new();
-    abort_lid_row.set_title("Abort if Lid Closed");
-    abort_lid_row.set_subtitle("Prevent authentication when the laptop lid is closed");
+    abort_lid_row.set_title("合盖时中止");
+    abort_lid_row.set_subtitle("笔记本合盖时阻止认证");
     let abort_lid_switch = gtk4::Switch::new();
     abort_lid_switch.set_valign(gtk4::Align::Center);
     abort_lid_row.add_suffix(&abort_lid_switch);
     auth_group.add(&abort_lid_row);
 
     let abort_first_resume_row = libadwaita::ActionRow::new();
-    abort_first_resume_row.set_title("Require a Suspend First");
-    abort_first_resume_row
-        .set_subtitle("Prevent authentication until the system has suspended and resumed once");
+    abort_first_resume_row.set_title("要求先挂起一次");
+    abort_first_resume_row.set_subtitle("系统完成一次挂起并恢复后才允许认证");
     let abort_first_resume_switch = gtk4::Switch::new();
     abort_first_resume_switch.set_valign(gtk4::Align::Center);
     abort_first_resume_row.add_suffix(&abort_first_resume_switch);
     auth_group.add(&abort_first_resume_row);
 
     let require_confirm_lock_screen_row = libadwaita::ActionRow::new();
-    require_confirm_lock_screen_row.set_title("Require Confirmation on Lock Screen");
-    require_confirm_lock_screen_row.set_subtitle(
-        "Require pressing Enter or clicking OK to authorize after face matches on the lock screen or login screen",
-    );
+    require_confirm_lock_screen_row.set_title("锁屏认证需要确认");
+    require_confirm_lock_screen_row
+        .set_subtitle("在锁屏或登录界面匹配到人脸后，需要按 Enter 或点击确定才能授权");
     let require_confirm_lock_screen_switch = gtk4::Switch::new();
     require_confirm_lock_screen_switch.set_valign(gtk4::Align::Center);
     require_confirm_lock_screen_row.add_suffix(&require_confirm_lock_screen_switch);
     auth_group.add(&require_confirm_lock_screen_row);
 
     let require_confirm_elevation_row = libadwaita::ActionRow::new();
-    require_confirm_elevation_row.set_title("Require Confirmation for Elevated Auth");
-    require_confirm_elevation_row.set_subtitle(
-        "Require pressing Enter or clicking OK to authorize after face matches for sudo, polkit, and similar prompts",
-    );
+    require_confirm_elevation_row.set_title("提权认证需要确认");
+    require_confirm_elevation_row
+        .set_subtitle("在 sudo、polkit 等提示中匹配到人脸后，需要按 Enter 或点击确定才能授权");
     let require_confirm_elevation_switch = gtk4::Switch::new();
     require_confirm_elevation_switch.set_valign(gtk4::Align::Center);
     require_confirm_elevation_row.add_suffix(&require_confirm_elevation_switch);
@@ -812,37 +797,37 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
 
     let resume_grace_row = libadwaita::SpinRow::with_range(0.0, 10000.0, 100.0);
     resume_grace_row.set_digits(0);
-    resume_grace_row.set_title("Resume Grace Period (ms)");
-    resume_grace_row.set_subtitle("Delay face authentication on wake from suspend");
+    resume_grace_row.set_title("唤醒宽限时间（毫秒）");
+    resume_grace_row.set_subtitle("从挂起状态唤醒后延迟人脸认证");
     auth_group.add(&resume_grace_row);
 
     let start_delay_row = libadwaita::SpinRow::with_range(0.0, 10000.0, 500.0);
     start_delay_row.set_digits(0);
-    start_delay_row.set_title("Start Delay (ms)");
-    start_delay_row.set_subtitle("Delay before face authentication starts");
+    start_delay_row.set_title("启动延迟（毫秒）");
+    start_delay_row.set_subtitle("开始人脸认证前的延迟");
     auth_group.add(&start_delay_row);
 
     let start_delay_scope_row = libadwaita::ComboRow::new();
-    start_delay_scope_row.set_title("Start Delay Applies To");
-    start_delay_scope_row.set_subtitle("Which prompts wait for the start delay");
+    start_delay_scope_row.set_title("启动延迟适用范围");
+    start_delay_scope_row.set_subtitle("哪些认证提示需要等待启动延迟");
     let start_delay_scope_model = gtk4::StringList::new(&START_DELAY_SCOPE_LABELS);
     start_delay_scope_row.set_model(Some(&start_delay_scope_model));
     auth_group.add(&start_delay_scope_row);
 
     let hybrid_row = libadwaita::ComboRow::new();
-    hybrid_row.set_title("Hybrid combining policy");
-    hybrid_row.set_subtitle("Combining policy when both RGB and IR cameras are active");
+    hybrid_row.set_title("混合判定策略");
+    hybrid_row.set_subtitle("同时启用 RGB 和红外摄像头时的判定策略");
     let hybrid_model = gtk4::StringList::new(&HYBRID_POLICY_LABELS);
     hybrid_row.set_model(Some(&hybrid_model));
     security_group.add(&hybrid_row);
 
     let storage_group = libadwaita::PreferencesGroup::new();
-    storage_group.set_title("Storage");
+    storage_group.set_title("存储");
     page.add(&storage_group);
 
     let encrypt_templates_row = libadwaita::ActionRow::new();
-    encrypt_templates_row.set_title("Encrypt Face Templates");
-    encrypt_templates_row.set_subtitle("Encrypt face templates at rest with a TPM-sealed key");
+    encrypt_templates_row.set_title("加密人脸模板");
+    encrypt_templates_row.set_subtitle("使用 TPM 密封密钥加密存储的人脸模板");
     let encrypt_templates_switch = gtk4::Switch::new();
     encrypt_templates_switch.set_valign(gtk4::Align::Center);
     encrypt_templates_row.add_suffix(&encrypt_templates_switch);
@@ -851,9 +836,9 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
     let unlock_gnome_keyring_row = libadwaita::ActionRow::new();
     // Stays hidden until the load below reports a daemon that can store the flag.
     unlock_gnome_keyring_row.set_visible(false);
-    unlock_gnome_keyring_row.set_title("Unlock GNOME Keyring");
+    unlock_gnome_keyring_row.set_title("解锁 GNOME 钥匙环");
     unlock_gnome_keyring_row
-        .set_subtitle("Use an enrolled password after liveness-protected GDM or greetd face login");
+        .set_subtitle("在经过活体检测的 GDM 或 greetd 人脸登录后，使用已录入的密码");
     let unlock_gnome_keyring_switch = gtk4::Switch::new();
     unlock_gnome_keyring_switch.set_valign(gtk4::Align::Center);
     unlock_gnome_keyring_row.add_suffix(&unlock_gnome_keyring_switch);
@@ -861,8 +846,10 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
 
     let unlock_kwallet_row = libadwaita::ActionRow::new();
     unlock_kwallet_row.set_visible(false);
-    unlock_kwallet_row.set_title("Unlock KDE KWallet");
-    unlock_kwallet_row.set_subtitle("Use an enrolled password after liveness-protected KDE login; enroll with gaze keyring --kwallet");
+    unlock_kwallet_row.set_title("解锁 KDE KWallet");
+    unlock_kwallet_row.set_subtitle(
+        "在经过活体检测的 KDE 登录后使用已录入的密码；使用 gaze keyring --kwallet 录入",
+    );
     let unlock_kwallet_switch = gtk4::Switch::new();
     unlock_kwallet_switch.set_valign(gtk4::Align::Center);
     unlock_kwallet_row.add_suffix(&unlock_kwallet_switch);
@@ -962,11 +949,11 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
             let loaded = config_loaded.get();
 
             if !authorized {
-                banner.set_title("Settings are locked");
-                banner.set_button_label(Some("Unlock…"));
+                banner.set_title("设置已锁定");
+                banner.set_button_label(Some("解锁…"));
             } else if !loaded {
-                banner.set_title("Could not read the current configuration from the Gaze daemon");
-                banner.set_button_label(Some("Try again"));
+                banner.set_title("无法从 Gaze 守护进程读取当前配置");
+                banner.set_button_label(Some("重试"));
             }
 
             banner.set_revealed(!authorized || !loaded);
@@ -1458,10 +1445,8 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
                         Err(e) => {
                             // The next read may use a connection this one just lost.
                             *proxy_cell.borrow_mut() = None;
-                            overlay.add_toast(libadwaita::Toast::new(&format!(
-                                "Failed to load configuration: {}",
-                                e
-                            )));
+                            overlay
+                                .add_toast(libadwaita::Toast::new(&format!("无法加载配置：{}", e)));
                         }
                     }
 
@@ -1497,21 +1482,21 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
                     let conn = match Connection::system().await {
                         Ok(conn) => conn,
                         Err(e) => {
-                            eprintln!("gaze-gui: system bus connection failed: {e}");
+                            eprintln!("gaze-gui：系统总线连接失败：{e}");
                             return;
                         }
                     };
                     let authority = match AuthorityProxy::new(&conn).await {
                         Ok(authority) => authority,
                         Err(e) => {
-                            eprintln!("gaze-gui: polkit proxy creation failed: {e}");
+                            eprintln!("gaze-gui：无法创建 polkit 代理：{e}");
                             return;
                         }
                     };
                     let subject = match Subject::new_for_owner(std::process::id(), None, None) {
                         Ok(subject) => subject,
                         Err(e) => {
-                            eprintln!("gaze-gui: polkit subject creation failed: {e}");
+                            eprintln!("gaze-gui：无法创建 polkit 主体：{e}");
                             return;
                         }
                     };
@@ -1530,7 +1515,7 @@ fn show_config_dialog(parent: &libadwaita::ApplicationWindow, overlay: &libadwai
                             is_authorized.set(res.is_authorized);
                             update_locked_state();
                         }
-                        Err(e) => eprintln!("gaze-gui: polkit CheckAuthorization failed: {e}"),
+                        Err(e) => eprintln!("gaze-gui：polkit 授权检查失败：{e}"),
                     }
                 }
             ));
@@ -1603,17 +1588,17 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
     let main_box = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
 
     let header = libadwaita::HeaderBar::new();
-    let title = libadwaita::WindowTitle::new("Gaze", &format!("User: {username}"));
+    let title = libadwaita::WindowTitle::new("Gaze", &format!("用户：{username}"));
     header.set_title_widget(Some(&title));
 
     let add_btn = gtk4::Button::from_icon_name("list-add-symbolic");
-    add_btn.set_tooltip_text(Some("Add new face"));
+    add_btn.set_tooltip_text(Some("添加人脸"));
 
     let test_btn = gtk4::Button::from_icon_name("media-playback-start-symbolic");
-    test_btn.set_tooltip_text(Some("Test Authentication"));
+    test_btn.set_tooltip_text(Some("测试认证"));
 
     let config_btn = gtk4::Button::from_icon_name("emblem-system-symbolic");
-    config_btn.set_tooltip_text(Some("Configure Gaze"));
+    config_btn.set_tooltip_text(Some("配置 Gaze"));
 
     header.pack_end(&add_btn);
     header.pack_end(&test_btn);
@@ -1634,8 +1619,8 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
     content.set_margin_bottom(16);
 
     let face_group = libadwaita::PreferencesGroup::new();
-    face_group.set_title("Enrolled Faces");
-    face_group.set_description(Some("Your registered face profiles"));
+    face_group.set_title("已录入的人脸");
+    face_group.set_description(Some("您已注册的人脸档案"));
 
     let face_list = gtk4::ListBox::new();
     face_list.add_css_class("boxed-list");
@@ -1646,8 +1631,8 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
 
     let status_page = libadwaita::StatusPage::new();
     status_page.set_icon_name(Some("contact-new-symbolic"));
-    status_page.set_title("No Faces Enrolled");
-    status_page.set_description(Some("Loading from daemon..."));
+    status_page.set_title("尚未录入人脸");
+    status_page.set_description(Some("正在从守护进程加载..."));
     status_page.set_visible(true);
     face_list.set_visible(false);
     content.append(&status_page);
@@ -1715,14 +1700,14 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
                     use futures::StreamExt;
 
                     if proxy.claim(&username).await.is_err() {
-                        add_toast(&window, "Failed to claim device");
+                        add_toast(&window, "无法取得设备使用权");
                         btn.set_sensitive(true);
                         return;
                     }
                     let mut stream = match proxy.receive_verify_status().await {
                         Ok(stream) => stream,
                         Err(_) => {
-                            add_toast(&window, "Daemon error starting verification");
+                            add_toast(&window, "守护进程启动验证时出错");
                             let _ = proxy.release().await;
                             btn.set_sensitive(true);
                             return;
@@ -1730,13 +1715,13 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
                     };
 
                     if proxy.verify_start("any").await.is_err() {
-                        add_toast(&window, "Daemon error starting verification");
+                        add_toast(&window, "守护进程启动验证时出错");
                         let _ = proxy.release().await;
                         btn.set_sensitive(true);
                         return;
                     }
 
-                    let mut text = "✗ Verification failed".to_string();
+                    let mut text = "✗ 验证失败".to_string();
                     let mut matched_face: Option<String> = None;
 
                     // Without a deadline of its own the button stays stuck for as long as the
@@ -1749,21 +1734,21 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
                                 let Ok(args) = signal.args() else { continue };
                                 let res = *args.result();
                                 if res == gaze_core::dbus::VerifyResult::VerifyMatch {
-                                    text = "✓ Authentication successful".to_string();
+                                    text = "✓ 认证成功".to_string();
                                     let faces = args.faces();
                                     matched_face = faces
                                         .iter()
                                         .find(|(_, _, _, rgb_p, _, _, ir_p)| *rgb_p || *ir_p)
                                         .map(|(n, _, _, _, _, _, _)| n.clone());
                                 } else {
-                                    text = "✗ Authentication failed".to_string();
+                                    text = "✗ 认证失败".to_string();
                                 }
                                 break;
                             }
                             futures::future::Either::Left((None, _)) => break,
                             futures::future::Either::Right(_) => {
                                 let _ = proxy.verify_stop().await;
-                                text = "✗ Verification timed out".to_string();
+                                text = "✗ 验证超时".to_string();
                                 break;
                             }
                         }
@@ -1847,8 +1832,8 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
         refresh,
         async move {
             let Ok(proxy) = connect_gaze().await else {
-                tracing::error!("Failed to connect to Gaze daemon");
-                status_page.set_description(Some("Failed to connect to Gaze daemon"));
+                tracing::error!("无法连接 Gaze 守护进程");
+                status_page.set_description(Some("无法连接 Gaze 守护进程"));
                 return;
             };
 
@@ -1893,7 +1878,7 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
                                     {
                                         // This CPU cannot run `gazed`, so retrying the request will not
                                         // help.
-                                        status_page.set_title("Unsupported CPU");
+                                        status_page.set_title("不支持的 CPU");
                                         status_page.set_description(Some(
                                             gaze_core::cpu::UNSUPPORTED_CPU_MESSAGE,
                                         ));
@@ -1901,9 +1886,9 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
                                         face_list.set_visible(false);
                                         return;
                                     } else if dbus_is_not_activatable(&err) {
-                                        status_page.set_title("Daemon Starting");
+                                        status_page.set_title("守护进程正在启动");
                                         status_page.set_description(Some(
-                                            "Gaze daemon is starting up, please wait...",
+                                            "Gaze 守护进程正在启动，请稍候...",
                                         ));
                                         status_page.set_visible(true);
                                         face_list.set_visible(false);
@@ -1921,7 +1906,7 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
                                         );
                                         return;
                                     } else {
-                                        add_dbus_error_toast(&window, "Failed to load faces", &err);
+                                        add_dbus_error_toast(&window, "无法加载人脸", &err);
                                         Vec::new()
                                     }
                                 }
@@ -1932,8 +1917,8 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
                             }
 
                             if faces.is_empty() {
-                                status_page.set_title("No Faces Enrolled");
-                                status_page.set_description(Some("Press + to add your first face"));
+                                status_page.set_title("尚未录入人脸");
+                                status_page.set_description(Some("点击 + 添加您的第一个人脸"));
                                 status_page.set_visible(true);
                                 face_list.set_visible(false);
                             } else {
@@ -1965,9 +1950,9 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
                                     let row = libadwaita::ActionRow::new();
                                     row.set_title(&face_name);
                                     row.set_subtitle(&format!(
-                                        "{} capture{}",
+                                        "{} 组采集{}",
                                         count,
-                                        if count == 1 { "" } else { "s" }
+                                        if count == 1 { "" } else { "" }
                                     ));
 
                                     let rgb_badge = gtk4::Label::new(Some("RGB"));
@@ -2036,7 +2021,7 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
                                             body.set_margin_bottom(10);
 
                                             let entry = gtk4::Entry::new();
-                                            entry.set_placeholder_text(Some("New face name"));
+                                            entry.set_placeholder_text(Some("新人脸名称"));
                                             entry.set_text(&face_name);
                                             body.append(&entry);
 
@@ -2044,9 +2029,9 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
                                                 gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
                                             button_row.set_halign(gtk4::Align::End);
 
-                                            let cancel_btn = gtk4::Button::with_label("Cancel");
+                                            let cancel_btn = gtk4::Button::with_label("取消");
                                             let rename_confirm_btn =
-                                                gtk4::Button::with_label("Rename");
+                                                gtk4::Button::with_label("重命名");
                                             rename_confirm_btn.add_css_class("suggested-action");
                                             rename_confirm_btn.set_sensitive(false);
 
@@ -2125,7 +2110,7 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
                                                                 {
                                                                     add_dbus_error_toast(
                                                                         &window,
-                                                                        "Failed to rename face",
+                                                                        "无法重命名人脸",
                                                                         &err,
                                                                     );
                                                                 } else {
@@ -2136,7 +2121,7 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
                                                                     }
 
                                                                     let text = format!(
-                                                                        "Renamed '{}' to '{}'",
+                                                                        "已将“{}”重命名为“{}”",
                                                                         face_name, new_name
                                                                     );
                                                                     add_toast(&window, text);
@@ -2219,7 +2204,7 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
                                                     {
                                                         add_dbus_error_toast(
                                                             &window,
-                                                            "Failed to remove face",
+                                                            "无法删除人脸",
                                                             &err,
                                                         );
                                                     }
@@ -2380,7 +2365,7 @@ mod tests {
             pump_until(|| !errors.borrow().is_empty(), Duration::from_secs(5)),
             "a failed write should be reported"
         );
-        assert!(errors.borrow()[0].starts_with("Failed to apply config"));
+        assert!(errors.borrow()[0].starts_with("无法应用配置"));
 
         schedule_config_apply(&queue, config_with_grace(1000));
         flush_config_apply(&queue);
@@ -2467,7 +2452,7 @@ mod tests {
     #[test]
     fn camera_subtitle_is_empty_for_listed_sources() {
         let options = vec![
-            ("Primary camera".to_string(), "primary".to_string()),
+            ("主摄像头".to_string(), "primary".to_string()),
             ("USB camera".to_string(), "/dev/video0".to_string()),
         ];
         assert_eq!(camera_subtitle(&options, "primary"), None);
@@ -2483,4 +2468,47 @@ mod tests {
             "an empty picker cannot show anything"
         );
     }
+    #[test]
+    #[ignore = "requires a display and GAZE_GUI_SNAPSHOT_DIR"]
+    fn chinese_windows_render() {
+        libadwaita::init().unwrap();
+        let app = libadwaita::Application::builder()
+            .application_id("com.gundulabs.Gaze.LocalizationCheck")
+            .build();
+        app.register(None::<&gtk4::gio::Cancellable>).unwrap();
+        build_window(&app, "测试用户");
+        let parent = app.active_window().unwrap()
+            .downcast::<libadwaita::ApplicationWindow>().unwrap();
+        let directory = std::path::PathBuf::from(std::env::var("GAZE_GUI_SNAPSHOT_DIR").unwrap());
+        std::fs::create_dir_all(&directory).unwrap();
+        let settle = || {
+            let until = std::time::Instant::now() + Duration::from_millis(800);
+            while std::time::Instant::now() < until {
+                while glib::MainContext::default().pending() {
+                    glib::MainContext::default().iteration(false);
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        };
+        let capture = |window: &gtk4::Window, name: &str| {
+            let paintable = gtk4::WidgetPaintable::new(Some(window));
+            let snapshot = gtk4::Snapshot::new();
+            paintable.snapshot(&snapshot, window.width() as f64, window.height() as f64);
+            let node = snapshot.to_node().expect("window rendered");
+            let texture = window.renderer().unwrap().render_texture(&node, None);
+            texture.save_to_png(directory.join(name)).unwrap();
+        };
+        settle();
+        capture(parent.upcast_ref(), "main.png");
+        show_config_dialog(&parent, &toast_overlay(&parent).unwrap());
+        settle();
+        let settings = gtk4::Window::list_toplevels().into_iter()
+            .filter_map(|widget| widget.downcast::<gtk4::Window>().ok())
+            .find(|window| window.title().as_deref() == Some("配置")).unwrap();
+        capture(&settings, "settings.png");
+        // This check only opens the locked settings window, and never changes values.
+        settings.close();
+        parent.close();
+    }
+
 }

@@ -55,7 +55,7 @@ impl AuthDaemon {
         UserDatabase::validate_username(username).map_err(Self::map_user_db_error)?;
 
         let c_username = CString::new(username)
-            .map_err(|_| fdo::Error::InvalidArgs("username contains NUL byte".into()))?;
+            .map_err(|_| fdo::Error::InvalidArgs("用户名包含 NUL 字节".into()))?;
         let mut pwd = unsafe { std::mem::zeroed::<libc::passwd>() };
         let mut result: *mut libc::passwd = ptr::null_mut();
         let buf_size = unsafe { libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) };
@@ -77,14 +77,10 @@ impl AuthDaemon {
         };
 
         if ret != 0 {
-            return Err(fdo::Error::Failed(format!(
-                "failed to resolve user '{username}'"
-            )));
+            return Err(fdo::Error::Failed(format!("无法解析用户 '{username}'")));
         }
         if result.is_null() {
-            return Err(fdo::Error::AccessDenied(format!(
-                "unknown user '{username}'"
-            )));
+            return Err(fdo::Error::AccessDenied(format!("未知用户 '{username}'")));
         }
 
         Ok(pwd.pw_uid)
@@ -93,23 +89,23 @@ impl AuthDaemon {
     pub(super) async fn caller_uid(header: &Header<'_>) -> fdo::Result<u32> {
         let sender = header
             .sender()
-            .ok_or_else(|| fdo::Error::AccessDenied("Missing DBus sender".into()))?;
+            .ok_or_else(|| fdo::Error::AccessDenied("缺少 DBus 发送者".into()))?;
         dbus_proxy()
             .await?
             .get_connection_unix_user(sender.to_owned().into())
             .await
-            .map_err(|e| fdo::Error::Failed(format!("Failed to get caller uid: {e}")))
+            .map_err(|e| fdo::Error::Failed(format!("无法获取调用者 UID：{e}")))
     }
 
     pub(super) async fn caller_pid(header: &Header<'_>) -> fdo::Result<u32> {
         let sender = header
             .sender()
-            .ok_or_else(|| fdo::Error::AccessDenied("Missing DBus sender".into()))?;
+            .ok_or_else(|| fdo::Error::AccessDenied("缺少 DBus 发送者".into()))?;
         dbus_proxy()
             .await?
             .get_connection_unix_process_id(sender.to_owned().into())
             .await
-            .map_err(|e| fdo::Error::Failed(format!("Failed to get caller pid: {e}")))
+            .map_err(|e| fdo::Error::Failed(format!("无法获取调用者 PID：{e}")))
     }
 
     pub(super) fn environ_has_ssh_marker(environ: &[u8]) -> bool {
@@ -231,7 +227,7 @@ impl AuthDaemon {
             self.resume_seen.load(Ordering::SeqCst),
         ) {
             warn!("No suspend/resume since boot, aborting face auth");
-            return Err(fdo::Error::Failed("no suspend/resume since boot".into()));
+            return Err(fdo::Error::Failed("启动后尚未挂起并恢复".into()));
         }
 
         let abort_if_ssh = *self.abort_if_ssh.lock().await;
@@ -245,14 +241,14 @@ impl AuthDaemon {
             };
             if Self::ssh_session_verdict(heuristic_is_ssh, session_remote) {
                 warn!(caller_pid, "SSH session detected, aborting face auth");
-                return Err(fdo::Error::Failed("SSH session detected".into()));
+                return Err(fdo::Error::Failed("检测到 SSH 会话".into()));
             }
         }
 
         let abort_if_lid_closed = *self.abort_if_lid_closed.lock().await;
         if abort_if_lid_closed && Self::is_lid_closed().await {
             warn!("Laptop lid is closed, aborting face auth");
-            return Err(fdo::Error::Failed("lid closed".into()));
+            return Err(fdo::Error::Failed("笔记本已合盖".into()));
         }
 
         Ok(())
@@ -301,7 +297,7 @@ impl AuthDaemon {
         let target_uid = Self::username_uid(&claim.username)?;
         if !Self::seat_camera_available(caller_uid, target_uid).await {
             return Err(fdo::Error::AccessDenied(
-                "refusing capture: the seat camera belongs to another user's session".into(),
+                "拒绝采集：此席位的摄像头属于其他用户的会话".into(),
             ));
         }
         Ok((caller_uid, target_uid))
@@ -320,7 +316,7 @@ impl AuthDaemon {
             return Ok(());
         }
         Err(fdo::Error::AccessDenied(
-            "only root or the active session may read the Gaze configuration".into(),
+            "仅 root 或活动会话可以读取 Gaze 配置".into(),
         ))
     }
 
@@ -351,7 +347,7 @@ impl AuthDaemon {
             return Ok(Self::pam_internal_owner(caller_uid, active_uid));
         }
         Err(fdo::Error::AccessDenied(
-            "only root or the active session may modify the PAM internal services list".into(),
+            "仅 root 或活动会话可以修改 PAM 内部服务列表".into(),
         ))
     }
 
@@ -385,7 +381,7 @@ impl AuthDaemon {
 
     pub(super) fn signal_destination(sender: &str) -> fdo::Result<BusName<'static>> {
         BusName::try_from(sender.to_string())
-            .map_err(|e| fdo::Error::Failed(format!("Invalid signal destination: {e}")))
+            .map_err(|e| fdo::Error::Failed(format!("信号目标无效：{e}")))
     }
 
     pub(super) async fn ensure_authorized(header: &Header<'_>, action_id: &str) -> fdo::Result<()> {
@@ -401,10 +397,10 @@ impl AuthDaemon {
 
         let authority = zbus_polkit::policykit1::AuthorityProxy::new(&conn)
             .await
-            .map_err(|e| fdo::Error::Failed(format!("Failed to create polkit proxy: {e}")))?;
+            .map_err(|e| fdo::Error::Failed(format!("无法创建 polkit 代理：{e}")))?;
 
         let subject = zbus_polkit::policykit1::Subject::new_for_message_header(header)
-            .map_err(|e| fdo::Error::Failed(format!("Failed to create polkit subject: {e}")))?;
+            .map_err(|e| fdo::Error::Failed(format!("无法创建 polkit 主体：{e}")))?;
 
         let details: HashMap<&str, &str> = HashMap::new();
         let flags = match interaction {
@@ -417,11 +413,11 @@ impl AuthDaemon {
         let result = authority
             .check_authorization(&subject, action_id, &details, flags, "")
             .await
-            .map_err(|e| fdo::Error::Failed(format!("PolicyKit CheckAuthorization failed: {e}")))?;
+            .map_err(|e| fdo::Error::Failed(format!("PolicyKit 授权检查失败：{e}")))?;
 
         if !result.is_authorized {
             return Err(fdo::Error::AccessDenied(format!(
-                "Authorization denied for action '{action_id}'"
+                "操作 '{action_id}' 的授权被拒绝"
             )));
         }
 
@@ -432,19 +428,17 @@ impl AuthDaemon {
         let sender = header
             .sender()
             .map(|s| s.to_string())
-            .ok_or_else(|| fdo::Error::AccessDenied("Missing DBus sender".into()))?;
+            .ok_or_else(|| fdo::Error::AccessDenied("缺少 DBus 发送者".into()))?;
 
         let state = self.claim_state.lock().await;
         if let Some(claim) = &*state {
             if claim.sender == sender {
                 return Ok(claim.clone());
             } else {
-                return Err(fdo::Error::Failed(
-                    "Daemon is claimed by another process".into(),
-                ));
+                return Err(fdo::Error::Failed("守护进程已被其他进程占用".into()));
             }
         }
-        Err(fdo::Error::Failed("Daemon is not claimed".into()))
+        Err(fdo::Error::Failed("尚未取得守护进程使用权".into()))
     }
 
     // Every capture opens the seat's V4L2 device, so a bystander's camera must never

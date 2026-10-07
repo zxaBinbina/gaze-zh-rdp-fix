@@ -131,18 +131,18 @@ async fn run(config: Config) -> anyhow::Result<()> {
         det_path.to_str().unwrap(),
         &config.inference,
     )
-    .expect("Failed to load detection model");
+    .expect("无法加载检测模型");
 
     let recognizer_rgb = recognize::FaceRecognizer::new_with_inference(
         rec_path.to_str().unwrap(),
         &config.inference,
     )
-    .expect("Failed to load recognition model");
+    .expect("无法加载识别模型");
     let recognizer_ir = recognize::FaceRecognizer::new_with_inference(
         rec_path.to_str().unwrap(),
         &config.inference,
     )
-    .expect("Failed to load recognition model");
+    .expect("无法加载识别模型");
 
     let liveness_detector = if config.liveness.enabled {
         let path = models::ensure_liveness_model(MODELS_DIR)?;
@@ -169,9 +169,7 @@ async fn run(config: Config) -> anyhow::Result<()> {
     let cipher = if config.storage.encrypt_templates {
         let dek = tpm::load_or_create_dek(std::path::Path::new(tpm::STATE_DIR)).map_err(|e| {
             anyhow::anyhow!(
-                "template encryption is enabled ([storage] encrypt_templates) but no usable TPM \
-                 is available, so the daemon is refusing to start rather than write unprotected \
-                 biometric data: {e}"
+                "已启用模板加密（[storage] encrypt_templates），但没有可用的 TPM。守护进程拒绝启动，以免写入未保护的生物识别数据：{e}"
             )
         })?;
         info!("Template encryption enabled (AES-256-GCM under a TPM-sealed key)");
@@ -195,9 +193,7 @@ async fn run(config: Config) -> anyhow::Result<()> {
             }
             Err(e) => {
                 return Err(anyhow::anyhow!(
-                    "template encryption is enabled ([storage] encrypt_templates) but the \
-                     existing templates could not be encrypted, so the daemon is refusing to \
-                     start on a database it would only be able to read in part: {e}"
+                    "已启用模板加密（[storage] encrypt_templates），但无法加密现有模板。守护进程拒绝启动，以免只能读取部分数据库：{e}"
                 ));
             }
         }

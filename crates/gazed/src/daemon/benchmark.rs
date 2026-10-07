@@ -54,13 +54,10 @@ pub(super) fn run_inference_benchmark(
     {
         let mut detector = detector.lock().unwrap_or_else(|e| e.into_inner());
         let runtime = detector.inference_runtime().clone();
-        let result =
-            benchmark_component(
-                "Face detector",
-                &runtime,
-                || Ok(detector.benchmark_infer()?),
-            )
-            .map_err(|e| fdo::Error::Failed(format!("detector benchmark failed: {e}")))?;
+        let result = benchmark_component("人脸检测器", &runtime, || {
+            Ok(detector.benchmark_infer()?)
+        })
+        .map_err(|e| fdo::Error::Failed(format!("检测器性能测试失败：{e}")))?;
         results.push(result);
     }
 
@@ -69,20 +66,20 @@ pub(super) fn run_inference_benchmark(
     {
         let mut recognizer = recognizer_rgb.blocking_lock();
         let runtime = recognizer.inference_runtime().clone();
-        let result = benchmark_component("Face recognizer (RGB)", &runtime, || {
+        let result = benchmark_component("人脸识别器（RGB）", &runtime, || {
             recognizer.get_embedding(&synthetic_face).map(|_| ())
         })
-        .map_err(|e| fdo::Error::Failed(format!("RGB recognizer benchmark failed: {e}")))?;
+        .map_err(|e| fdo::Error::Failed(format!("RGB 识别器性能测试失败：{e}")))?;
         results.push(result);
     }
 
     {
         let mut recognizer = recognizer_ir.blocking_lock();
         let runtime = recognizer.inference_runtime().clone();
-        let result = benchmark_component("Face recognizer (IR)", &runtime, || {
+        let result = benchmark_component("人脸识别器（红外）", &runtime, || {
             recognizer.get_embedding(&synthetic_face).map(|_| ())
         })
-        .map_err(|e| fdo::Error::Failed(format!("IR recognizer benchmark failed: {e}")))?;
+        .map_err(|e| fdo::Error::Failed(format!("红外识别器性能测试失败：{e}")))?;
         results.push(result);
     }
 
@@ -90,10 +87,10 @@ pub(super) fn run_inference_benchmark(
         let mut liveness_guard = liveness.blocking_lock();
         if let Some(detector) = liveness_guard.as_mut() {
             let runtime = detector.inference_runtime().clone();
-            let result = benchmark_component("Liveness (MiniFASNet)", &runtime, || {
+            let result = benchmark_component("活体检测（MiniFASNet）", &runtime, || {
                 detector.live_score(&synthetic_face).map(|_| ())
             })
-            .map_err(|e| fdo::Error::Failed(format!("liveness benchmark failed: {e}")))?;
+            .map_err(|e| fdo::Error::Failed(format!("活体检测性能测试失败：{e}")))?;
             results.push(result);
         }
     }

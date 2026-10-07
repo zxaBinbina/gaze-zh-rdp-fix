@@ -81,13 +81,13 @@ impl EyeStateClassifier {
     fn closed_probability_from_output(data: &[f32]) -> anyhow::Result<f32> {
         if data.len() != CLASS_COUNT {
             anyhow::bail!(
-                "eye-state model produced {} scores, expected {CLASS_COUNT}",
+                "眼睛状态模型输出了 {} 个分数，预期为 {CLASS_COUNT}",
                 data.len()
             );
         }
         let closed = data[CLOSED_CLASS];
         if !closed.is_finite() {
-            anyhow::bail!("eye-state model produced a non-finite score");
+            anyhow::bail!("眼睛状态模型输出了非有限分数");
         }
         Ok(closed.clamp(0.0, 1.0))
     }
@@ -100,8 +100,8 @@ impl EyeStateClassifier {
         let ipd = (eyes[0].0 - eyes[1].0).hypot(eyes[0].1 - eyes[1].1);
         let mut probabilities = [0.0; 2];
         for (eye, probability) in eyes.into_iter().zip(probabilities.iter_mut()) {
-            let transform = Self::eye_transform(eye, ipd)
-                .ok_or_else(|| anyhow::anyhow!("degenerate eye landmarks"))?;
+            let transform =
+                Self::eye_transform(eye, ipd).ok_or_else(|| anyhow::anyhow!("眼部关键点退化"))?;
             let crop = crate::align::warp_affine(img, &transform, INPUT_SIZE, INPUT_SIZE);
             let tensor = Self::pre_process(&crop);
             let inputs = ort::inputs![TensorRef::from_array_view(&tensor)?];
@@ -217,7 +217,7 @@ fn ensure_private_dir(path: &Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(path)?;
     let meta = std::fs::symlink_metadata(path)?;
     if meta.file_type().is_symlink() || !meta.is_dir() {
-        anyhow::bail!("{} is not a private directory", path.display());
+        anyhow::bail!("{} 不是私有目录", path.display());
     }
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
     Ok(())

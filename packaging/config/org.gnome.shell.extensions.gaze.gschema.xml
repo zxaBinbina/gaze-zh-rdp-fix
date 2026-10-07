@@ -6,20 +6,18 @@
   <schema id="org.gnome.shell.extensions.gaze" path="/org/gnome/shell/extensions/gaze/">
     <key name="enable-face-authentication" type="b">
       <default>false</default>
-      <summary>Enable face authentication</summary>
+      <summary>启用人脸认证</summary>
       <description>
-        Controls whether face authentication is attempted by the Gaze GNOME
-        extension for the current dconf profile.
+        控制 Gaze GNOME 扩展是否为当前 dconf 配置尝试人脸认证。
       </description>
     </key>
 
     <key name="max-face-tries" type="i">
       <default>3</default>
       <range min="2" max="20"/>
-      <summary>Maximum face authentication attempts</summary>
+      <summary>人脸认证尝试次数上限</summary>
       <description>
-        Number of failed face attempts before face auth is stopped for the
-        current authentication cycle.
+        当前认证周期中停止人脸认证前允许的失败次数。
       </description>
     </key>
 
@@ -30,9 +28,9 @@
         <choice value="infinite"/>
       </choices>
       <default>'fixed'</default>
-      <summary>Face retry mode</summary>
+      <summary>人脸重试模式</summary>
       <description>
-        Whether face authentication retries are disabled, limited to a fixed number, or infinite.
+        人脸认证重试是禁用、限制为固定次数还是无限次。
       </description>
     </key>
   </schema>

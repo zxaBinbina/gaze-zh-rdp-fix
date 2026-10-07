@@ -216,6 +216,33 @@ let activeExtensionInstance = null;
 
 const safeGettext = (str) => {
   if (!str) return str;
+  const chinese = {
+    "Sorry, face authentication did not work. Please try again.": "抱歉，人脸认证未成功。请重试。",
+    "You reached the maximum face authentication attempts, please try another method": "已达到人脸认证尝试次数上限，请尝试其他方式",
+    "Face authentication failed. Please enter your password.": "人脸认证失败。请输入密码。",
+    "(or look at the camera)": "（或看向摄像头）",
+    "Face not recognized. Please enter your password.": "未识别到匹配人脸。请输入密码。",
+    "Face not detected. Please enter your password.": "未检测到人脸。请输入密码。",
+    "Too dark for face authentication. Please enter your password.": "光线过暗，无法进行人脸认证。请输入密码。",
+    "Face authentication timed out. Please enter your password.": "人脸认证超时。请输入密码。",
+    "Face authentication unavailable. Please enter your password.": "人脸认证不可用。请输入密码。",
+    "Face verified. Press Enter or click Authenticate to confirm.": "人脸已验证。请按 Enter 或点击认证以确认。",
+    "Face authentication failed": "人脸认证失败",
+    "Confirm Face Unlock": "确认人脸解锁",
+    "Password": "密码",
+    "Failed to show confirmation prompt": "无法显示确认提示",
+    "Please look at the camera...": "请看向摄像头...",
+    "Need more light...": "光线不足...",
+    "Face is clipped. Please move back...": "人脸超出画面，请后退一点...",
+    "Please center your face...": "请将人脸居中...",
+    "Please come closer...": "请靠近一点...",
+    "Please back up...": "请后退一点...",
+    "Hold still...": "请保持不动...",
+    "Authentication failed": "认证失败",
+    "Authentication failure": "认证失败",
+    "Sorry, that didn’t work. Please try again.": "抱歉，认证未成功。请重试。"
+};
+  if (Object.hasOwn(chinese, str)) return chinese[str];
   try {
     if (activeExtensionInstance?.gettext) {
       return activeExtensionInstance.gettext(str) || str;
@@ -729,6 +756,14 @@ const exitAuthPromptConfirmMode = (authPrompt) => {
 };
 
 const FACE_STATUS_UPDATES = new Set([
+  "请看向摄像头...",
+  "光线不足...",
+  "人脸超出画面，请后退一点...",
+  "请将人脸居中...",
+  "请靠近一点...",
+  "请后退一点...",
+  "请保持不动...",
+
   "Please look at the camera...",
   "Need more light...",
   "Face is clipped. Please move back...",

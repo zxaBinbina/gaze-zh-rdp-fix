@@ -44,7 +44,7 @@ pub(super) fn extension_schema_dir_in(data_dirs: &[PathBuf]) -> Option<PathBuf> 
 }
 
 /// Whether the extension files are on disk, which separates "the package is
-/// missing" from "GNOME Shell has not picked the package up yet".
+/// missing" from "GNOME Shell 尚未识别该软件包".
 pub(super) fn extension_installed() -> bool {
     extension_installed_in(&xdg_data_dirs())
 }
@@ -189,7 +189,7 @@ pub(super) fn gdm_greeter_readiness() -> GdmGreeterReadiness {
         Ok(_) => {}
         Err(err) => {
             return GdmGreeterReadiness::Unverifiable(format!(
-                "could not read {GDM_DCONF_PROFILE_PATH}: {err}"
+                "无法读取 {GDM_DCONF_PROFILE_PATH}：{err}"
             ));
         }
     }
@@ -203,7 +203,7 @@ pub(super) fn gdm_greeter_readiness() -> GdmGreeterReadiness {
         Some(_) => return GdmGreeterReadiness::ExtensionNotEnabled,
         None => {
             return GdmGreeterReadiness::Unverifiable(
-                "`dconf read` against the GDM database failed".to_string(),
+                "对 GDM 数据库执行 `dconf read` 失败".to_string(),
             );
         }
     }
@@ -226,9 +226,9 @@ pub(super) fn gdm_greeter_readiness() -> GdmGreeterReadiness {
 pub(super) fn gdm_selinux_fix() -> String {
     let path = selinux::policy_path(selinux::GDM_CAMERA_MODULE);
     if Path::new(&path).exists() {
-        format!("Run `sudo semodule -i {path}`, then reboot.")
+        format!("运行 `sudo semodule -i {path}`，然后重启。")
     } else {
-        format!("Reinstall the Gaze GNOME extension package to restore {path}, then reboot.")
+        format!("重新安装 Gaze GNOME 扩展包以恢复 {path}，然后重启。")
     }
 }
 
@@ -244,29 +244,28 @@ pub(super) fn report_gdm_camera_policy(report: &mut Report, policy: ModuleState)
     let module = selinux::GDM_CAMERA_MODULE;
     match policy {
         ModuleState::Loaded => report.pass(
-            "GDM camera SELinux policy",
-            format!("{module} is loaded, so the greeter can open the camera"),
+            "GDM 摄像头 SELinux 策略",
+            format!("{module} 已加载，登录界面可以打开摄像头"),
         ),
         ModuleState::NotLoaded => report.error(
-            "GDM camera SELinux policy",
+            "GDM 摄像头 SELinux 策略",
             format!(
-                "SELinux is enforcing and {module} is not loaded, so the GDM greeter is denied the camera and the login screen never scans"
+                "SELinux 处于强制模式，但未加载 {module}，GDM 登录界面被拒绝访问摄像头，因此不会开始扫描"
             ),
             gdm_selinux_fix(),
         ),
         ModuleState::NeedsRoot => report.warning(
-            "GDM camera SELinux policy",
+            "GDM 摄像头 SELinux 策略",
             format!(
-                "SELinux is enforcing, and whether {module} is loaded could not be \
-                 checked without root"
+                "SELinux 处于强制模式，没有 root 权限无法检查 {module} 是否已加载"
             ),
-            "Run `sudo gaze doctor` to read the loaded module list.",
+            "运行 `sudo gaze doctor` 读取已加载的模块列表。",
         ),
         ModuleState::Unverifiable(why) => report.warning(
-            "GDM camera SELinux policy",
-            format!("SELinux is enforcing, but the loaded module list could not be read: {why}"),
+            "GDM 摄像头 SELinux 策略",
+            format!("SELinux 处于强制模式，但无法读取已加载的模块列表：{why}"),
             format!(
-                "Run `semodule -l | grep {module}`; if it prints nothing, {}",
+                "运行 `semodule -l | grep {module}`；如果没有输出，{}",
                 gdm_selinux_fix()
             ),
         ),
@@ -329,7 +328,7 @@ mod tests {
             let check = report
                 .checks
                 .into_iter()
-                .find(|check| check.name == "GDM camera SELinux policy")
+                .find(|check| check.name == "GDM 摄像头 SELinux 策略")
                 .expect("the SELinux check always reports once it runs");
             (check.level, check.message, check.fix.unwrap_or_default())
         };
@@ -347,7 +346,7 @@ mod tests {
         let (level, message, fix) = reported(ModuleState::NeedsRoot);
         assert_eq!(level, Level::Warning);
         assert!(
-            message.contains("without root"),
+            message.contains("没有 root 权限"),
             "an unprivileged run must say what it could not see: {message}"
         );
         assert!(

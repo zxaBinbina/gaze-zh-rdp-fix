@@ -17,7 +17,7 @@ fn normalize_embedding(row: Array1<f32>) -> anyhow::Result<Array1<f32>> {
     let norm = row.dot(&row).sqrt();
     tracing::debug!("Face recognizer computed embedding norm: {}", norm);
     if norm == 0.0 || !norm.is_finite() {
-        anyhow::bail!("recognizer produced a degenerate (zero-norm) embedding");
+        anyhow::bail!("识别器生成了退化的特征向量（范数为零）");
     }
     Ok(row / norm)
 }
@@ -189,6 +189,6 @@ mod tests {
     #[test]
     fn normalize_embedding_reports_why_a_degenerate_embedding_was_refused() {
         let err = normalize_embedding(Array1::zeros(4)).unwrap_err();
-        assert!(err.to_string().contains("zero-norm"), "{err}");
+        assert!(err.to_string().contains("范数为零"), "{err}");
     }
 }

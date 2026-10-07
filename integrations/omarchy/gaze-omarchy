@@ -11,14 +11,14 @@ PLUGIN_LINK="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/$PLUGIN_ID"
 
 usage() {
 	cat <<'HELP'
-Usage: gaze-omarchy enable|disable|doctor|ready
+用法：gaze-omarchy enable|disable|doctor|ready
 
-enable   Enable Gaze's lock plugin from an unlocked Omarchy desktop.
-disable  Restore the stock lock before removing the integration package.
-doctor   Report host compatibility, PAM, enrollment and lock readiness.
-ready    Check face readiness silently, without opening the camera.
+enable   从已解锁的 Omarchy 桌面启用 Gaze 锁屏插件。
+disable  删除集成软件包前恢复原版锁屏。
+doctor   报告主程序兼容性、PAM、录入和锁屏就绪状态。
+ready    静默检查人脸认证就绪状态，不打开摄像头。
 
-Run as your desktop user, without sudo.
+请以桌面用户身份运行，不要使用 sudo。
 HELP
 }
 
@@ -90,32 +90,32 @@ enrolled() {
 }
 
 unlocked_status() {
-	status=$(run omarchy-shell lock status) || fail 'Cannot query the Omarchy lock.'
+	status=$(run omarchy-shell lock status) || fail '无法查询 Omarchy 锁屏。'
 	printf '%s\n' "$status" | jq -e '.locked == false and .passwordPam == true' >/dev/null ||
-		fail 'Unlock your desktop and restore working password authentication first.'
+		fail '请先解锁桌面，并恢复正常的密码认证。'
 }
 
 enable_plugin() {
 	unlocked_status
-	compatible || fail 'This Omarchy version needs review. Supported baselines: 4.0.2 and 4.0.3.'
-	pam_ready || fail 'Reinstall gaze-omarchy: its dedicated face PAM service is missing or modified.'
-	catalog=$(run omarchy-plugin-catalog) || fail 'Cannot query the Omarchy plugin catalog.'
-	printf '%s\n' "$catalog" | jq -e 'type == "array"' >/dev/null || fail 'Invalid plugin catalog.'
+	compatible || fail '此 Omarchy 版本需要审核。受支持的基准版本为 4.0.2 和 4.0.3。'
+	pam_ready || fail '请重新安装 gaze-omarchy：其专用人脸 PAM 服务缺失或已被修改。'
+	catalog=$(run omarchy-plugin-catalog) || fail '无法查询 Omarchy 插件目录。'
+	printf '%s\n' "$catalog" | jq -e 'type == "array"' >/dev/null || fail '插件目录无效。'
 	if printf '%s\n' "$catalog" | jq -e --arg id "$PLUGIN_ID" \
 		'any(.[]; .enabled == true and (.clonedFrom // .omarchy.clonedFrom) == "omarchy.lock" and .id != $id)' >/dev/null; then
-		fail 'Disable your other custom lock plugin before enabling Gaze.'
+		fail '启用 Gaze 前，请先禁用其他自定义锁屏插件。'
 	fi
 	if [ -e "$PLUGIN_LINK" ] || [ -L "$PLUGIN_LINK" ]; then
-		owns_link || fail "Preserving existing plugin directory: $PLUGIN_LINK"
+		owns_link || fail "保留现有插件目录：$PLUGIN_LINK"
 	else
 		mkdir -p "$(dirname "$PLUGIN_LINK")"
 		ln -s "$SOURCE" "$PLUGIN_LINK"
 	fi
-	run omarchy plugin enable "$PLUGIN_ID" || fail 'Plugin enable failed. Run gaze-omarchy disable to restore the stock locker.'
+	run omarchy plugin enable "$PLUGIN_ID" || fail '启用插件失败。运行 gaze-omarchy disable 以恢复原版锁屏。'
 	# Recheck before restarting an authentication service.
 	unlocked_status
-	run omarchy restart shell || fail 'Restart the Omarchy shell while unlocked to load the plugin.'
-	printf 'Gaze Omarchy lock enabled. Enroll with gaze add-face default, then run gaze auth.\n'
+	run omarchy restart shell || fail '请在解锁状态下重启 Omarchy shell 以加载插件。'
+	printf 'Gaze Omarchy 锁屏已启用。使用 gaze add-face default 录入，然后运行 gaze auth。\n'
 }
 
 wait_for_stock() {
@@ -134,18 +134,18 @@ wait_for_stock() {
 
 disable_plugin() {
 	if [ ! -e "$PLUGIN_LINK" ] && [ ! -L "$PLUGIN_LINK" ]; then
-		printf 'Gaze Omarchy is not installed for this user.\n'
+		printf '当前用户未安装 Gaze Omarchy。\n'
 		return 0
 	fi
 	unlocked_status
-	owns_link || fail 'No package-managed Gaze plugin link; preserving the existing directory.'
-	run omarchy plugin disable "$PLUGIN_ID" || fail 'Cannot disable Gaze; the plugin link has been preserved.'
-	run omarchy plugin enable omarchy.lock || fail 'Cannot enable the stock locker; the plugin link has been preserved.'
+	owns_link || fail '没有由软件包管理的 Gaze 插件链接；保留现有目录。'
+	run omarchy plugin disable "$PLUGIN_ID" || fail '无法禁用 Gaze；已保留插件链接。'
+	run omarchy plugin enable omarchy.lock || fail '无法启用原版锁屏；已保留插件链接。'
 	unlocked_status
-	run omarchy restart shell || fail 'Restart the shell while unlocked before removing gaze-omarchy.'
-	wait_for_stock || fail 'Stock locker has not loaded; the Gaze plugin link has been preserved.'
+	run omarchy restart shell || fail '删除 gaze-omarchy 前，请在解锁状态下重启 shell。'
+	wait_for_stock || fail '原版锁屏尚未加载；已保留 Gaze 插件链接。'
 	rm "$PLUGIN_LINK"
-	printf "Omarchy's stock lock restored. Gaze enrollments are retained.\n"
+	printf "已恢复 Omarchy 原版锁屏。Gaze 录入数据已保留。\n"
 }
 
 issue() {
@@ -155,25 +155,25 @@ issue() {
 
 doctor() {
 	doctor_failed=0
-	compatible || issue 'Omarchy host differs from the reviewed baseline; update gaze-omarchy.'
-	pam_ready || issue 'Dedicated face PAM is missing, modified or untrusted; reinstall gaze-omarchy.'
-	enrolled || issue 'No enrollment or daemon unavailable; run gaze add-face default and gaze auth.'
-	owns_link || issue 'Plugin is not installed for this user; run gaze-omarchy enable while unlocked.'
+	compatible || issue 'Omarchy 主程序与已审核的基准版本不同；请更新 gaze-omarchy。'
+	pam_ready || issue '专用人脸 PAM 缺失、被修改或不可信；请重新安装 gaze-omarchy。'
+	enrolled || issue '尚未录入或守护进程不可用；请运行 gaze add-face default 和 gaze auth。'
+	owns_link || issue '当前用户未安装插件；请在解锁状态下运行 gaze-omarchy enable。'
 	catalog=$(run omarchy-plugin-catalog 2>/dev/null) || catalog=
 	printf '%s\n' "$catalog" | jq -e --arg id "$PLUGIN_ID" \
 		'any(.[]; .id == $id and .enabled == true)' >/dev/null 2>&1 ||
-		issue 'Gaze plugin is disabled or the catalog is unavailable; run gaze-omarchy enable while unlocked.'
+		issue 'Gaze 插件已禁用或插件目录不可用；请在解锁状态下运行 gaze-omarchy enable。'
 	status=$(run omarchy-shell lock status 2>/dev/null) || status=
 	expected=$(jq -er '.version' "$SOURCE/manifest.json") || expected=
 	printf '%s\n' "$status" | jq -e --arg id "$PLUGIN_ID" --arg version "$expected" \
 		'.pluginId == $id and .pluginVersion == $version' >/dev/null 2>&1 ||
-		issue 'Running locker differs from installed Gaze; run gaze-omarchy enable while unlocked.'
+		issue '正在运行的锁屏与已安装的 Gaze 不一致；请在解锁状态下运行 gaze-omarchy enable。'
 	printf '%s\n' "$status" | jq -e '.passwordPam == true' >/dev/null 2>&1 ||
-		issue 'Omarchy password PAM is unavailable; restore password unlock.'
+		issue 'Omarchy 密码 PAM 不可用；请恢复密码解锁。'
 	printf '%s\n' "$status" | jq -e '.face == true' >/dev/null 2>&1 ||
-		issue 'Face lane is not ready; retry after enrollment and shell restart.'
+		issue '人脸认证尚未就绪；请在录入并重启 shell 后重试。'
 	if [ "$doctor_failed" -eq 0 ]; then
-		printf 'Gaze Omarchy integration is ready.\n'
+		printf 'Gaze Omarchy 集成已就绪。\n'
 	fi
 	return "$doctor_failed"
 }
@@ -183,8 +183,8 @@ case "${1:-}" in
 enable | disable | doctor | ready) action=$1 ;;
 *) usage >&2; exit 1 ;;
 esac
-[ "$#" -eq 1 ] || fail 'Expected one action.'
-[ "$(id -u)" -ne 0 ] || fail 'Run as your desktop user, without sudo.'
+[ "$#" -eq 1 ] || fail '需要一个操作参数。'
+[ "$(id -u)" -ne 0 ] || fail '请以桌面用户身份运行，不要使用 sudo。'
 case "$action" in
 ready) compatible >/dev/null 2>&1 && pam_ready >/dev/null 2>&1 && enrolled >/dev/null 2>&1 ;;
 enable) enable_plugin ;;

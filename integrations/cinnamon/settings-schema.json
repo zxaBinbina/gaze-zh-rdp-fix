@@ -4,12 +4,12 @@
     "pages": ["behavior"],
     "behavior": {
       "type": "page",
-      "title": "Behavior",
+      "title": "行为",
       "sections": ["face-authentication"]
     },
     "face-authentication": {
       "type": "section",
-      "title": "Face authentication",
+      "title": "人脸认证",
       "keys": [
         "face-authentication-description",
         "enable-face-authentication",
@@ -20,22 +20,22 @@
   },
   "face-authentication-description": {
     "type": "label",
-    "description": "Face authentication for unlocking this session. This does not affect the login screen. Settings are stored in this extension's configuration."
+    "description": "用于解锁此会话的人脸认证。这不会影响登录界面。设置保存在此扩展的配置中。"
   },
   "enable-face-authentication": {
     "type": "switch",
     "default": true,
-    "description": "Enable face authentication (lock screen)"
+    "description": "启用人脸认证（锁屏）"
   },
   "face-retry-mode": {
     "type": "combobox",
     "default": "fixed",
     "options": {
-      "Disabled": "disabled",
-      "Fixed tries": "fixed",
-      "Infinite": "infinite"
+      "禁用": "disabled",
+      "固定次数": "fixed",
+      "无限次": "infinite"
     },
-    "description": "Face retry mode"
+    "description": "人脸重试模式"
   },
   "max-face-tries": {
     "type": "spinbutton",
@@ -43,7 +43,7 @@
     "min": 2,
     "max": 20,
     "step": 1,
-    "description": "Maximum face tries",
+    "description": "人脸尝试次数上限",
     "dependency": "face-retry-mode=fixed"
   }
 }

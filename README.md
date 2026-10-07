@@ -1,6 +1,6 @@
 # Gaze 中文 PAM 提示与 KRDP 登录修复
 
-基于 [gundulabs/gaze v0.3.8](https://github.com/gundulabs/gaze/tree/v0.3.8) 的源码分支，包含 PAM 认证提示汉化，以及 KDE 远程桌面登录时跳过本机人脸扫描的修复。
+基于 [gundulabs/gaze v0.3.8](https://github.com/gundulabs/gaze/tree/v0.3.8) 的源码分支，包含 CLI、设置 GUI、PAM 和桌面集成的中文界面，以及 KDE 远程桌面登录时跳过本机人脸扫描的修复。
 
 本项目独立于远程桌面网页认证项目，可单独查看、构建或提取补丁。源代码已经应用下面两份补丁，不需要再次应用。
 
@@ -23,7 +23,8 @@
 已加入 KRDP 6.7.5 的画面冻结修复、源码、补丁和回归测试，并提供合并 RPM 构建脚本。
 
 ```bash
-sudo dnf install ./dist/packages/x86_64/gaze-0.3.8-3.zh_rdp.fc44.x86_64.rpm
+sudo dnf install ./dist/packages/x86_64/gaze-0.3.8-1.fc44.x86_64.rpm \
+  ./dist/packages/x86_64/gaze-gui-0.3.8-1.fc44.x86_64.rpm
 ```
 
 Windows App Android 客户端还需**关闭硬件解码**，避免光标/点击偏移。服务端修复处理约 4 秒后画面冻结的问题，两者经过分别回退验证。

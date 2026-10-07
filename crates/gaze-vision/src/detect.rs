@@ -22,12 +22,12 @@ pub enum DetectError {
 impl fmt::Display for DetectError {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InitFailed(msg) => write!(fmt, "detector init failed: {msg}"),
-            Self::ImageProcessing(err) => write!(fmt, "image processing: {err}"),
-            Self::Io(err) => write!(fmt, "IO: {err}"),
-            Self::OrtSession(err) => write!(fmt, "ORT session: {err}"),
-            Self::NoFacesDetected => write!(fmt, "no faces detected"),
-            Self::InferenceFailed(msg) => write!(fmt, "inference failed: {msg}"),
+            Self::InitFailed(msg) => write!(fmt, "检测器初始化失败：{msg}"),
+            Self::ImageProcessing(err) => write!(fmt, "图像处理：{err}"),
+            Self::Io(err) => write!(fmt, "输入/输出：{err}"),
+            Self::OrtSession(err) => write!(fmt, "ORT 会话：{err}"),
+            Self::NoFacesDetected => write!(fmt, "未检测到人脸"),
+            Self::InferenceFailed(msg) => write!(fmt, "推理失败：{msg}"),
         }
     }
 }
@@ -130,12 +130,12 @@ impl FaceDetector {
         let channels = mat_resized.channels() as usize;
         if !matches!(channels, 3 | 4) {
             return Err(DetectError::InferenceFailed(format!(
-                "expected a 3 or 4 channel frame, got {channels}"
+                "应为 3 或 4 通道帧，实际为 {channels}"
             )));
         }
         if mat_data.len() != plane_len * channels {
             return Err(DetectError::InferenceFailed(format!(
-                "resized image data length {} does not match plane length {}",
+                "调整尺寸后的图像数据长度 {} 与平面长度 {} 不匹配",
                 mat_data.len(),
                 plane_len * channels
             )));
@@ -160,7 +160,7 @@ impl FaceDetector {
         let num_outputs = outputs.len();
         if num_outputs != 9 && num_outputs != 6 {
             return Err(DetectError::InferenceFailed(format!(
-                "expected 6 or 9 model outputs, got {}",
+                "应有 6 或 9 个模型输出，实际为 {}",
                 num_outputs
             )));
         }
@@ -199,8 +199,7 @@ impl FaceDetector {
                 || kps_data.is_some_and(|data| data.len() < points * 10)
             {
                 return Err(DetectError::InferenceFailed(format!(
-                    "detector heads for stride {stride} are too small for a {grid_w}x{grid_h} \
-                     grid with {num_anchors} anchors: scores {}, boxes {}, keypoints {:?}",
+                    "步长为 {stride} 的检测器输出不足以处理具有 {num_anchors} 个锚点的 {grid_w}x{grid_h} 网格：分数 {}，边界框 {}，关键点 {:?}",
                     score_data.len(),
                     bbox_data.len(),
                     kps_data.map(<[f32]>::len)
@@ -562,18 +561,15 @@ mod tests {
     fn detect_errors_describe_themselves() {
         assert_eq!(
             DetectError::InitFailed("no model".to_string()).to_string(),
-            "detector init failed: no model"
+            "检测器初始化失败：no model"
         );
-        assert_eq!(
-            DetectError::NoFacesDetected.to_string(),
-            "no faces detected"
-        );
+        assert_eq!(DetectError::NoFacesDetected.to_string(), "未检测到人脸");
         assert_eq!(
             DetectError::InferenceFailed("bad shape".to_string()).to_string(),
-            "inference failed: bad shape"
+            "推理失败：bad shape"
         );
         let io = DetectError::Io(std::io::Error::from(std::io::ErrorKind::NotFound));
-        assert!(io.to_string().starts_with("IO: "));
+        assert!(io.to_string().starts_with("输入/输出："));
     }
 
     #[test]

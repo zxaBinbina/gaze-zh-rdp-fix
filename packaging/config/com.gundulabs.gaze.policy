@@ -9,8 +9,8 @@
   <vendor_url>https://gaze.gundulabs.com</vendor_url>
 
   <action id="com.gundulabs.gaze.clear-duress">
-    <description>Clear a Gaze duress lockout</description>
-    <message>Authentication is required to re-enable face authentication after a duress signal.</message>
+    <description>解除 Gaze 胁迫锁定</description>
+    <message>收到胁迫信号后，重新启用人脸认证需要验证身份。</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
@@ -19,8 +19,8 @@
   </action>
 
   <action id="com.gundulabs.gaze.manage-faces">
-    <description>Manage face enrollments for Gaze</description>
-    <message>Authentication is required to manage Gaze face enrollments.</message>
+    <description>管理 Gaze 人脸录入</description>
+    <message>管理 Gaze 人脸录入需要验证身份。</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
@@ -29,8 +29,8 @@
   </action>
 
   <action id="com.gundulabs.gaze.manage-config">
-    <description>Manage daemon configuration for Gaze</description>
-    <message>Authentication is required to change Gaze daemon configuration.</message>
+    <description>管理 Gaze 守护进程配置</description>
+    <message>更改 Gaze 守护进程配置需要验证身份。</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
@@ -39,8 +39,8 @@
   </action>
 
   <action id="com.gundulabs.gaze.manage-gdm-profile">
-    <description>Manage GDM login authentication for Gaze</description>
-    <message>Authentication is required to change Gaze face authentication at the GDM login screen.</message>
+    <description>管理 Gaze 的 GDM 登录认证</description>
+    <message>更改 GDM 登录界面的 Gaze 人脸认证需要验证身份。</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>

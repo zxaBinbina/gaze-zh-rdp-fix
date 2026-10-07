@@ -1,6 +1,6 @@
 {
     "name": "Gaze",
-    "description": "GNOME Shell extension for Gaze",
+    "description": "Gaze 的 GNOME Shell 扩展",
     "uuid": "gaze@gundulabs.com",
     "shell-version": [
         "51",

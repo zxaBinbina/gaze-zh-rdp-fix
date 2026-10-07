@@ -36,20 +36,20 @@ export default class GazePreferences extends ExtensionPreferences {
         const extensionSettings = this.getSettings();
 
         const behaviorPage = new Adw.PreferencesPage({
-            title: 'Behavior',
+            title: '行为',
             icon_name: 'preferences-system-symbolic',
         });
 
         const behaviorGroup = new Adw.PreferencesGroup({
-            title: 'Face authentication',
+            title: '人脸认证',
             description:
-                'Face authentication for unlocking this session. ' +
-                'This does not affect the GDM login screen (see below). ' +
-                'Settings are stored in your current dconf profile.',
+                '用于解锁此会话的人脸认证。' +
+                '这不会影响 GDM 登录界面（见下方）。' +
+                '设置保存在当前 dconf 配置中。',
         });
 
         const faceRow = new Adw.SwitchRow({
-            title: 'Enable face authentication (lock screen)',
+            title: '启用人脸认证（锁屏）',
             active: extensionSettings.get_boolean(FACE_AUTH_KEY),
         });
 
@@ -63,17 +63,17 @@ export default class GazePreferences extends ExtensionPreferences {
 
         const retryModes = ['disabled', 'fixed', 'infinite'];
         const retryModeRow = new Adw.ComboRow({
-            title: 'Face retry mode',
+            title: '人脸重试模式',
             model: Gtk.StringList.new([
-                'Disabled',
-                'Fixed tries',
-                'Infinite'
+                '禁用',
+                '固定次数',
+                '无限次'
             ]),
         });
         behaviorGroup.add(retryModeRow);
 
         const triesRow = new Adw.SpinRow({
-            title: 'Maximum face tries',
+            title: '人脸尝试次数上限',
             adjustment: new Gtk.Adjustment({
                 lower: 2,
                 upper: 20,
@@ -121,16 +121,16 @@ export default class GazePreferences extends ExtensionPreferences {
         behaviorPage.add(behaviorGroup);
 
         const loginGroup = new Adw.PreferencesGroup({
-            title: 'GDM login screen',
+            title: 'GDM 登录界面',
             description:
-                'Enable face authentication at the GDM login screen. ' +
-                'Requires administrator authorization. ' +
-                'Note: GNOME keyring is normally unlocked by your password, ' +
-                'so logging in with face only may leave it locked.',
+                '在 GDM 登录界面启用人脸认证。' +
+                '需要管理员授权。' +
+                '注意：GNOME 钥匙环通常使用密码解锁，' +
+                '因此仅通过人脸登录可能会使其保持锁定。',
         });
 
         const gdmRow = new Adw.SwitchRow({
-            title: 'Enable face auth at GDM login',
+            title: '在 GDM 登录时启用人脸认证',
             active: false,
             sensitive: false,
         });
@@ -150,7 +150,7 @@ export default class GazePreferences extends ExtensionPreferences {
             })
             .catch(error => {
                 logError(error, '[gaze] Failed to read GDM face auth state');
-                gdmRow.set_subtitle('Gaze daemon unavailable.');
+                gdmRow.set_subtitle('Gaze 守护进程不可用。');
             });
 
         const notifyGdmFailure = (error, desired) => {
@@ -161,11 +161,11 @@ export default class GazePreferences extends ExtensionPreferences {
             let message;
             if (accessDenied) {
                 message = desired
-                    ? 'Administrator authorization is required to enable face auth at the GDM login screen.'
-                    : 'Administrator authorization is required to disable face auth at the GDM login screen.';
+                    ? '在 GDM 登录界面启用人脸认证需要管理员授权。'
+                    : '在 GDM 登录界面禁用人脸认证需要管理员授权。';
             } else {
                 Gio.DBusError.strip_remote_error(error);
-                message = `Could not update GDM login face auth: ${error.message}`;
+                message = `无法更新 GDM 登录人脸认证：${error.message}`;
             }
             gdmRow.set_subtitle(message);
             if (typeof window.add_toast === 'function')
@@ -185,8 +185,8 @@ export default class GazePreferences extends ExtensionPreferences {
                     gdmRow.set_sensitive(true);
                     if (typeof window.add_toast === 'function') {
                         const message = desired
-                            ? 'Face auth enabled at the GDM login screen. Restart GDM (or reboot) for it to take effect.'
-                            : 'Face auth disabled at the GDM login screen. Restart GDM (or reboot) for it to take effect.';
+                            ? '已在 GDM 登录界面启用人脸认证。重启 GDM（或系统）后生效。'
+                            : '已在 GDM 登录界面禁用人脸认证。重启 GDM（或系统）后生效。';
                         window.add_toast(new Adw.Toast({title: message}));
                     }
                 })

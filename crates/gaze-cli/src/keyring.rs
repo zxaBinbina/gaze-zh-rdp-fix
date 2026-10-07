@@ -11,11 +11,7 @@ fn ensure_backend_enabled(config: &Config, backend: Backend) -> anyhow::Result<(
         Backend::Gnome => config.storage.unlock_gnome_keyring,
         Backend::KWallet => config.storage.unlock_kwallet,
     };
-    anyhow::ensure!(
-        enabled,
-        "enable {} unlock with gaze config first",
-        backend.name()
-    );
+    anyhow::ensure!(enabled, "请先通过 gaze config 启用 {} 解锁", backend.name());
     Ok(())
 }
 
@@ -30,28 +26,27 @@ pub fn enroll(username: &str, config: &Config, backend: Backend) -> anyhow::Resu
     };
     anyhow::ensure!(
         unsafe { libc::setrlimit(libc::RLIMIT_CORE, &limit) } == 0,
-        "cannot disable credential core dumps"
+        "无法禁用凭据进程的核心转储"
     );
     // Check the account before prompting. Enrollment checks again in case it changes meanwhile.
     gaze_security::keyring::Account::lookup(username)?;
-    println!("Enter the {} password for {username}.", backend.name());
+    println!("请输入 {username} 的 {} 密码。", backend.name());
     let password = Zeroizing::new(
         dialoguer::Password::new()
-            .with_prompt(format!("{} password", backend.name()))
-            .with_confirmation("Confirm keyring password", "Passwords did not match")
+            .with_prompt(format!("{} 密码", backend.name()))
+            .with_confirmation("确认钥匙环密码", "两次输入的密码不一致")
             .interact()?,
     );
     gaze_security::keyring::enroll_for(backend, username, password.as_bytes())?;
-    println!("{} unlock enrolled for {username}.", backend.name());
+    println!("已为 {username} 录入 {} 解锁凭据。", backend.name());
     // The greeter's PAM worker runs confined as xdm_t. Distribution policy blocks it from
     // reading /etc/shadow and the TPM, so it cannot use the record we just wrote.
     if crate::selinux::is_enforcing() {
         let module = crate::selinux::GREETER_KEYRING_MODULE;
         match crate::selinux::load_module(module) {
-            Ok(()) => println!("Loaded the {module} SELinux policy for the login screen."),
+            Ok(()) => println!("已为登录界面加载 {module} SELinux 策略。"),
             Err(err) => eprintln!(
-                "Warning: the {module} SELinux policy could not be loaded ({err}). Face login \
-                 cannot unlock {} until you run `sudo semodule -i {}`.",
+                "警告：无法加载 {module} SELinux 策略（{err}）。人脸登录无法解锁 {}，请先运行 `sudo semodule -i {}`。",
                 backend.name(),
                 crate::selinux::policy_path(module)
             ),

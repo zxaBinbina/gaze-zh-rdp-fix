@@ -28,10 +28,10 @@ Item {
   property bool faceMessageIsError: false
 
   readonly property string faceStatusText: faceConfirming
-    ? "Face recognized. Press Enter to unlock, Esc to cancel"
-    : (faceAuthenticating ? "Looking for your face…" : faceMessage)
+    ? "人脸已识别。按 Enter 解锁，按 Esc 取消"
+    : (faceAuthenticating ? "正在查找您的人脸…" : faceMessage)
 
-  readonly property string placeholderText: "Enter Password"
+  readonly property string placeholderText: "输入密码"
   readonly property int fieldWidth: 381
   readonly property int fieldHeight: 67
   readonly property int outlineThickness: 3
@@ -204,7 +204,7 @@ Item {
       Text {
         textFormat: Text.PlainText
         anchors.fill: passwordInput
-        text: root.authenticatingPassword ? "Checking…" : (root.failureMessage.length > 0 ? root.failureMessage : root.placeholderText)
+        text: root.authenticatingPassword ? "正在检查…" : (root.failureMessage.length > 0 ? root.failureMessage : root.placeholderText)
         visible: passwordInput.text.length === 0
         color: root.authenticatingPassword ? Color.lock.text : (root.failureMessage.length > 0 ? Color.lock.textError : Color.lock.placeholder)
         font.family: Style.font.family

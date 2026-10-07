@@ -6,10 +6,10 @@
 /// together to avoid reintroducing a restart loop.
 pub const EXIT_UNSUPPORTED_CPU: u8 = 78;
 
-pub const UNSUPPORTED_CPU_MESSAGE: &str = "AVX2 is unavailable; gazed cannot run on this CPU";
+pub const UNSUPPORTED_CPU_MESSAGE: &str = "AVX2 不可用；gazed 无法在此 CPU 上运行";
 
 pub const UNSUPPORTED_CPU_FIX: &str =
-    "Use a machine with AVX2 support. The CLI can run here, but the daemon cannot.";
+    "请使用支持 AVX2 的计算机。CLI 可在此处运行，但守护进程无法运行。";
 
 /// Checks whether the prebuilt ONNX Runtime used by `gazed` can run on this CPU.
 /// Its startup code always issues AVX2 instructions, so unsupported CPUs receive

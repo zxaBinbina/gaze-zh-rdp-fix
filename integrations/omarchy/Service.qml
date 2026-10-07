@@ -47,7 +47,7 @@ Item {
   property string faceMessage: ""
   property bool faceMessageIsError: false
 
-  readonly property string faceConfirmationPrompt: "Face Verified. Type 'yes' to confirm."
+  readonly property string faceConfirmationPrompt: "人脸已验证。输入 yes 以确认。"
   readonly property int faceAutoDelay: 3000
   readonly property int faceWakeDelay: 500
 
@@ -151,7 +151,7 @@ Item {
     idleBlankTimer.stop()
     if (!facePam.start()) {
       faceAuthenticating = false
-      setFaceMessage("Face authentication unavailable", true)
+      setFaceMessage("人脸认证不可用", true)
       armBlankTimer()
       return
     }
@@ -170,7 +170,7 @@ Item {
   function cancelFace() {
     var wasActive = faceAuthenticating || faceDelayTimer.running
     stopFace()
-    if (wasActive) setFaceMessage("Face authentication cancelled", false)
+    if (wasActive) setFaceMessage("人脸认证已取消", false)
     if (lockRequested) armBlankTimer()
   }
 
@@ -199,7 +199,7 @@ Item {
         runWake()
       } else {
         stopFace()
-        setFaceMessage("Face authentication unavailable", true)
+        setFaceMessage("人脸认证不可用", true)
         armBlankTimer()
       }
       return
@@ -219,7 +219,7 @@ Item {
       finishUnlock()
       return
     }
-    if (faceMessage.length === 0 || faceMessage.indexOf("look at the camera") !== -1) setFaceMessage("Face not recognized", true)
+    if (faceMessage.length === 0 || (faceMessage.indexOf("look at the camera") !== -1 || faceMessage.indexOf("摄像头") !== -1)) setFaceMessage("未识别到匹配人脸", true)
     else faceMessageIsError = true
     armBlankTimer()
   }
@@ -329,7 +329,7 @@ Item {
     enteredPassword = ""
     pendingPassword = ""
     failedAttempts += 1
-    failureMessage = "Authentication failed (" + failedAttempts + ")"
+    failureMessage = "认证失败（" + failedAttempts + "）"
     runWake()
   }
 

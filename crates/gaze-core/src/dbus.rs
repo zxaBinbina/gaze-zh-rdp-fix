@@ -117,23 +117,23 @@ impl From<DbusConfig> for Config {
 #[zvariant(signature = "s")]
 #[serde(rename_all = "kebab-case")]
 pub enum CaptureStatus {
-    #[strum(serialize = "Camera is not in use...")]
+    #[strum(serialize = "摄像头未使用...")]
     Unused,
-    #[strum(serialize = "Please look at the camera...")]
+    #[strum(serialize = "请看向摄像头...")]
     NoFace,
-    #[strum(serialize = "Need more light...")]
+    #[strum(serialize = "光线不足...")]
     TooDark,
-    #[strum(serialize = "Face is clipped. Please move back...")]
+    #[strum(serialize = "人脸超出画面，请后退一点...")]
     Clipped,
-    #[strum(serialize = "Please center your face...")]
+    #[strum(serialize = "请将人脸居中...")]
     NotCentered,
-    #[strum(serialize = "Please come closer...")]
+    #[strum(serialize = "请靠近一点...")]
     TooFar,
-    #[strum(serialize = "Please back up...")]
+    #[strum(serialize = "请后退一点...")]
     TooClose,
-    #[strum(serialize = "Hold still...")]
+    #[strum(serialize = "请保持不动...")]
     Ready,
-    #[strum(serialize = "Hold still...")]
+    #[strum(serialize = "请保持不动...")]
     Usable,
 }
 
@@ -178,25 +178,25 @@ impl CaptureStatus {
 #[zvariant(signature = "s")]
 #[serde(rename_all = "kebab-case")]
 pub enum EnrollPrompt {
-    #[strum(serialize = "Face the camera")]
+    #[strum(serialize = "请正对摄像头")]
     LookStraight,
-    #[strum(serialize = "Tilt your face slightly up")]
+    #[strum(serialize = "请稍微抬头")]
     LookUp,
-    #[strum(serialize = "Tilt your face slightly down")]
+    #[strum(serialize = "请稍微低头")]
     LookDown,
-    #[strum(serialize = "Turn your face slightly left")]
+    #[strum(serialize = "请稍微向左转头")]
     LookLeft,
-    #[strum(serialize = "Turn your face slightly right")]
+    #[strum(serialize = "请稍微向右转头")]
     LookRight,
-    #[strum(serialize = "Database error during enrollment")]
+    #[strum(serialize = "录入时发生数据库错误")]
     DbFailed,
-    #[strum(serialize = "Camera error during enrollment")]
+    #[strum(serialize = "录入时发生摄像头错误")]
     CameraFailed,
-    #[strum(serialize = "Enrollment cancelled")]
+    #[strum(serialize = "录入已取消")]
     Cancelled,
-    #[strum(serialize = "Captured")]
+    #[strum(serialize = "已采集")]
     Captured,
-    #[strum(serialize = "Completed")]
+    #[strum(serialize = "已完成")]
     Completed,
 }
 
@@ -308,14 +308,14 @@ pub fn benchmark_from_reply(
         tracing::warn!(
             %actual,
             %expected,
-            "daemon benchmark layout does not match this build; restart gazed"
+            "守护进程的性能测试数据格式与此版本不匹配；请重启 gazed"
         );
         return Ok(None);
     }
 
     body.deserialize::<Vec<BenchmarkResult>>()
         .map(Some)
-        .map_err(|e| anyhow::anyhow!("Failed to decode benchmark results: {e}"))
+        .map_err(|e| anyhow::anyhow!("无法解码性能测试结果：{e}"))
 }
 
 pub async fn try_load_config_from_daemon(proxy: &GazeProxy<'_>) -> anyhow::Result<Option<Config>> {
@@ -323,7 +323,7 @@ pub async fn try_load_config_from_daemon(proxy: &GazeProxy<'_>) -> anyhow::Resul
         .inner()
         .get_property("Config")
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to read config property: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("无法读取配置属性：{e}"))?;
     config_from_property(raw)
 }
 
@@ -334,7 +334,7 @@ pub fn config_from_property(raw: OwnedValue) -> anyhow::Result<Option<Config>> {
         tracing::warn!(
             %actual,
             %expected,
-            "daemon config layout does not match this build; restart gazed"
+            "守护进程的配置格式与此版本不匹配；请重启 gazed"
         );
         return Ok(None);
     }
@@ -342,7 +342,7 @@ pub fn config_from_property(raw: OwnedValue) -> anyhow::Result<Option<Config>> {
     DbusConfig::try_from(raw)
         .map(Config::from)
         .map(Some)
-        .map_err(|e| anyhow::anyhow!("Failed to decode config property: {e}"))
+        .map_err(|e| anyhow::anyhow!("无法解码配置属性：{e}"))
 }
 
 /// Decode a complete update while preserving the legacy Config property's wire format.
@@ -360,8 +360,7 @@ pub fn config_update_from_property(
 pub async fn load_config_from_daemon(proxy: &GazeProxy<'_>) -> anyhow::Result<Config> {
     try_load_config_from_daemon(proxy).await?.ok_or_else(|| {
         anyhow::anyhow!(
-            "The running daemon predates this build and sends a config layout it \
-             cannot read. Restart it with `systemctl restart gazed`."
+            "正在运行的守护进程版本较旧，发送的配置格式无法被此版本读取。请使用 `systemctl restart gazed` 重启。"
         )
     })
 }
@@ -385,10 +384,7 @@ pub async fn load_config_with_keyring_from_daemon(
         }
         Err(error) if dbus_is_unknown_method(&error) => false,
         Err(error) => {
-            return Err(anyhow::anyhow!(
-                "Failed to read GNOME Keyring configuration: {}",
-                error
-            ));
+            return Err(anyhow::anyhow!("无法读取 GNOME 钥匙环配置：{}", error));
         }
     };
     let kwallet = match proxy.kwallet_enabled().await {
@@ -398,9 +394,7 @@ pub async fn load_config_with_keyring_from_daemon(
         }
         Err(error) if dbus_is_unknown_method(&error) => false,
         Err(error) => {
-            return Err(anyhow::anyhow!(
-                "Failed to read KWallet configuration: {error}"
-            ));
+            return Err(anyhow::anyhow!("无法读取 KWallet 配置：{error}"));
         }
     };
     match proxy.ir_frame_size().await {
@@ -409,7 +403,7 @@ pub async fn load_config_with_keyring_from_daemon(
             .set_ir_frame_size((width > 0 && height > 0).then_some((width, height))),
         Err(error) if dbus_is_unknown_method(&error) => {}
         Err(error) => {
-            return Err(anyhow::anyhow!("Failed to read the IR frame size: {error}"));
+            return Err(anyhow::anyhow!("无法读取红外画面尺寸：{error}"));
         }
     }
     Ok((
@@ -432,10 +426,9 @@ async fn apply_ir_frame_size_to_daemon(
         Ok(()) => Ok(()),
         Err(error) if dbus_is_unknown_method(&error) && size.is_none() => Ok(()),
         Err(error) if dbus_is_unknown_method(&error) => Err(anyhow::anyhow!(
-            "The running daemon does not support an IR frame size override. \
-             Update gazed or set the IR frame size to automatic."
+            "正在运行的守护进程不支持指定红外画面尺寸。请更新 gazed 或将红外画面尺寸设为自动。"
         )),
-        Err(error) => Err(anyhow::anyhow!("Failed to set the IR frame size: {error}")),
+        Err(error) => Err(anyhow::anyhow!("无法设置红外画面尺寸：{error}")),
     }
 }
 
@@ -444,7 +437,7 @@ pub async fn apply_config_to_daemon(proxy: &GazeProxy<'_>, config: &Config) -> a
     proxy
         .set_config(config.clone().into())
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to set config property: {e}"))
+        .map_err(|e| anyhow::anyhow!("无法设置配置属性：{e}"))
 }
 
 pub async fn apply_config_with_keyring_to_daemon(
@@ -462,15 +455,13 @@ pub async fn apply_config_with_keyring_to_daemon(
         Ok(()) => return Ok(()),
         Err(error) if dbus_is_unknown_method(&error) && !unlock_kwallet => {}
         Err(error) => {
-            return Err(anyhow::anyhow!(
-                "Failed to set wallet configuration: {error}"
-            ));
+            return Err(anyhow::anyhow!("无法设置钱包配置：{error}"));
         }
     }
     proxy
         .set_config_with_keyring(config, unlock_gnome_keyring)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to set keyring-aware config: {e}"))
+        .map_err(|e| anyhow::anyhow!("无法设置包含钥匙环选项的配置：{e}"))
 }
 
 pub async fn get_pam_internal(proxy: &GazeProxy<'_>) -> Vec<String> {
@@ -553,7 +544,7 @@ pub async fn active_session_lookup_on(
 pub async fn active_session_on(connection: &zbus::Connection) -> anyhow::Result<ActiveSession> {
     active_session_lookup_on(connection)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("seat0 has no active session"))
+        .ok_or_else(|| anyhow::anyhow!("seat0 没有活动会话"))
 }
 
 /// Returns the uid of every session on seat0, including background sessions.
@@ -927,17 +918,11 @@ mod tests {
 
     #[test]
     fn enum_display_strings_are_user_facing_messages() {
-        assert_eq!(
-            CaptureStatus::NoFace.to_string(),
-            "Please look at the camera..."
-        );
-        assert_eq!(CaptureStatus::TooDark.to_string(), "Need more light...");
-        assert_eq!(CaptureStatus::Ready.to_string(), "Hold still...");
-        assert_eq!(CaptureStatus::Usable.to_string(), "Hold still...");
-        assert_eq!(
-            EnrollPrompt::LookLeft.to_string(),
-            "Turn your face slightly left"
-        );
+        assert_eq!(CaptureStatus::NoFace.to_string(), "请看向摄像头...");
+        assert_eq!(CaptureStatus::TooDark.to_string(), "光线不足...");
+        assert_eq!(CaptureStatus::Ready.to_string(), "请保持不动...");
+        assert_eq!(CaptureStatus::Usable.to_string(), "请保持不动...");
+        assert_eq!(EnrollPrompt::LookLeft.to_string(), "请稍微向左转头");
         assert_eq!(VerifyResult::VerifyNoMatch.as_ref(), "VerifyNoMatch");
     }
 

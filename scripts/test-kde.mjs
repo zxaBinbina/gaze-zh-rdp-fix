@@ -477,7 +477,7 @@ for (const target of Object.keys(targets)) {
             assert.equal(result.prompted, false);
             assert.equal(result.counted, false);
             assert.equal(await env.read('kde'), password);
-            assert.match(env.status(), /lock screen: enabled/);
+            assert.match(env.status(), /锁屏：已启用/);
         });
 
         scoped('locked and nologin accounts stay locked on a face match', async env => {
@@ -515,7 +515,7 @@ for (const target of Object.keys(targets)) {
             env.run('enable');
             env.run('disable');
             assert.deepEqual(await env.files(), before);
-            assert.match(env.status(), /lock screen: (disabled|not configured)/);
+            assert.match(env.status(), /锁屏：(已禁用|未配置)/);
         });
 
         scoped('enable is idempotent and an explicit disable outlives upgrades', async env => {
@@ -564,7 +564,7 @@ for (const target of Object.keys(targets)) {
                     if (scenario.face === 'success' && unlocks) assert.equal(result.prompted, false);
                 }
             }
-            assert.match(env.status(), /login greeter: enabled/);
+            assert.match(env.status(), /登录界面：已启用/);
         });
 
         scoped('disable-login restores the login stacks', async env => {

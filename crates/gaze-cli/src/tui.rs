@@ -233,9 +233,9 @@ fn render_busy(frame: &mut Frame<'_>, screen: &BusyScreen<'_>) {
     .wrap(Wrap { trim: true });
     frame.render_widget(message, chunks[0]);
 
-    render_pulse(frame, chunks[1], screen.tick, screen.tone, "working");
+    render_pulse(frame, chunks[1], screen.tick, screen.tone, "正在处理");
 
-    let controls = Paragraph::new("Ctrl+C or q to cancel")
+    let controls = Paragraph::new("按 Ctrl+C 或 q 取消")
         .style(Style::default().fg(Color::DarkGray))
         .alignment(Alignment::Center);
     frame.render_widget(controls, chunks[2]);
@@ -245,7 +245,7 @@ fn render_auth(frame: &mut Frame<'_>, screen: &AuthScreen<'_>) {
     let area = centered_rect(frame.area(), 76, 16);
     let block = Block::default()
         .title(Line::from(vec![Span::styled(
-            " Gaze Auth ",
+            " Gaze 认证 ",
             Style::default()
                 .fg(screen.status_tone.color())
                 .add_modifier(Modifier::BOLD),
@@ -266,7 +266,7 @@ fn render_auth(frame: &mut Frame<'_>, screen: &AuthScreen<'_>) {
         .split(inner);
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("User ", Style::default().fg(Color::DarkGray)),
+        Span::styled("用户 ", Style::default().fg(Color::DarkGray)),
         Span::styled(
             screen.user,
             Style::default()
@@ -275,7 +275,7 @@ fn render_auth(frame: &mut Frame<'_>, screen: &AuthScreen<'_>) {
         ),
         Span::raw("   "),
         Span::styled(
-            format!("{}ms", screen.elapsed.as_millis()),
+            format!("{}毫秒", screen.elapsed.as_millis()),
             Style::default().fg(Color::DarkGray),
         ),
     ]))
@@ -285,7 +285,7 @@ fn render_auth(frame: &mut Frame<'_>, screen: &AuthScreen<'_>) {
     let spinner = SPINNER[screen.tick as usize % SPINNER.len()];
     let status = Paragraph::new(vec![
         Line::from(Span::styled(
-            "Looking for a matching face",
+            "正在查找匹配的人脸",
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
@@ -303,7 +303,7 @@ fn render_auth(frame: &mut Frame<'_>, screen: &AuthScreen<'_>) {
             ),
         ]),
     ])
-    .block(Block::default().borders(Borders::ALL).title("Camera"))
+    .block(Block::default().borders(Borders::ALL).title("摄像头"))
     .alignment(Alignment::Center)
     .wrap(Wrap { trim: true });
     frame.render_widget(status, chunks[1]);
@@ -313,10 +313,10 @@ fn render_auth(frame: &mut Frame<'_>, screen: &AuthScreen<'_>) {
         chunks[2],
         screen.tick,
         screen.status_tone,
-        "scanning",
+        "正在扫描",
     );
 
-    let controls = Paragraph::new("Ctrl+C or q to cancel")
+    let controls = Paragraph::new("按 Ctrl+C 或 q 取消")
         .style(Style::default().fg(Color::DarkGray))
         .alignment(Alignment::Center);
     frame.render_widget(controls, chunks[3]);
@@ -330,9 +330,9 @@ fn render_enroll(frame: &mut Frame<'_>, screen: &EnrollScreen<'_>) {
         screen.capture_tone.color()
     };
     let title = if screen.is_refine {
-        " Gaze Refinement "
+        " Gaze 人脸优化 "
     } else {
-        " Gaze Enrollment "
+        " Gaze 人脸录入 "
     };
     let block = Block::default()
         .title(Line::from(vec![Span::styled(
@@ -356,14 +356,14 @@ fn render_enroll(frame: &mut Frame<'_>, screen: &EnrollScreen<'_>) {
         .split(inner);
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("User ", Style::default().fg(Color::DarkGray)),
+        Span::styled("用户 ", Style::default().fg(Color::DarkGray)),
         Span::styled(
             screen.user,
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" / Face ", Style::default().fg(Color::DarkGray)),
+        Span::styled(" / 人脸 ", Style::default().fg(Color::DarkGray)),
         Span::styled(
             screen.face,
             Style::default()
@@ -377,7 +377,7 @@ fn render_enroll(frame: &mut Frame<'_>, screen: &EnrollScreen<'_>) {
     let remaining = screen
         .time_remaining
         .filter(|seconds| *seconds > 0.0)
-        .map(|seconds| format!(" ({seconds:.1}s)"))
+        .map(|seconds| format!(" （{seconds:.1}秒）"))
         .unwrap_or_default();
     let prompt = Paragraph::new(vec![
         Line::from(Span::styled(
@@ -387,13 +387,9 @@ fn render_enroll(frame: &mut Frame<'_>, screen: &EnrollScreen<'_>) {
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from("Position your face as prompted. Capture is automatic when centered."),
+        Line::from("请按照提示调整人脸位置。居中后将自动采集。"),
     ])
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Capture prompt"),
-    )
+    .block(Block::default().borders(Borders::ALL).title("采集提示"))
     .alignment(Alignment::Center)
     .wrap(Wrap { trim: true });
     frame.render_widget(prompt, chunks[1]);
@@ -411,9 +407,9 @@ fn render_enroll(frame: &mut Frame<'_>, screen: &EnrollScreen<'_>) {
                 Style::default().fg(screen.capture_tone.color()),
             ),
         ]),
-        Line::from("Keep your head inside the camera frame."),
+        Line::from("请将头部保持在摄像头画面内。"),
     ])
-    .block(Block::default().borders(Borders::ALL).title("Camera"))
+    .block(Block::default().borders(Borders::ALL).title("摄像头"))
     .alignment(Alignment::Center)
     .wrap(Wrap { trim: true });
     frame.render_widget(capture, chunks[2]);
@@ -422,13 +418,13 @@ fn render_enroll(frame: &mut Frame<'_>, screen: &EnrollScreen<'_>) {
     let progress = screen.progress.min(max);
     let ratio = f64::from(progress) / f64::from(max);
     let gauge = Gauge::default()
-        .block(Block::default().borders(Borders::ALL).title("Progress"))
+        .block(Block::default().borders(Borders::ALL).title("进度"))
         .gauge_style(Style::default().fg(Color::Cyan).bg(Color::Black))
         .ratio(ratio)
         .label(format!("{progress}/{max}"));
     frame.render_widget(gauge, chunks[3]);
 
-    let controls = Paragraph::new("Ctrl+C or q to cancel")
+    let controls = Paragraph::new("按 Ctrl+C 或 q 取消")
         .style(Style::default().fg(Color::DarkGray))
         .alignment(Alignment::Center);
     frame.render_widget(controls, chunks[4]);
@@ -456,28 +452,28 @@ fn render_cancel_popup(frame: &mut Frame<'_>, area: Rect) {
     let popup = centered_rect(area, 54, 7);
     frame.render_widget(Clear, popup);
     let block = Block::default()
-        .title(" Cancel Enrollment ")
+        .title(" 取消录入 ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
     frame.render_widget(block, popup);
 
     let inner = inset(popup, 2, 1);
     let message = Paragraph::new(vec![
-        Line::from("Discard captures from this session?"),
+        Line::from("丢弃本次采集的数据？"),
         Line::from(""),
         Line::from(vec![
             Span::styled(
                 "Y",
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
-            Span::raw(": discard    "),
+            Span::raw("：丢弃    "),
             Span::styled(
                 "N/Esc",
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::raw(": resume"),
+            Span::raw("：继续"),
         ]),
     ])
     .alignment(Alignment::Center)

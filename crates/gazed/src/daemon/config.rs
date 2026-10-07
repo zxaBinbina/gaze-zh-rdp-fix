@@ -58,13 +58,11 @@ pub(super) fn gdm_override_error(
         std::io::ErrorKind::ReadOnlyFilesystem | std::io::ErrorKind::PermissionDenied
     ) {
         return fdo::Error::Failed(format!(
-            "Failed to {action} {}: {err}. The GDM dconf database is read-only, \
-             so it is managed by your system configuration rather than by Gaze; \
-             on NixOS set `services.gaze.gnome.gdmFaceLogin` instead.",
+            "无法{action} {}：{err}。GDM dconf 数据库为只读，由系统配置管理，而非 Gaze；在 NixOS 上请改为设置 `services.gaze.gnome.gdmFaceLogin`。",
             path.display()
         ));
     }
-    fdo::Error::Failed(format!("Failed to {action} {}: {err}", path.display()))
+    fdo::Error::Failed(format!("无法{action} {}：{err}", path.display()))
 }
 
 impl AuthDaemon {
@@ -114,46 +112,38 @@ impl AuthDaemon {
                     security.detector(),
                     security.recognizer(),
                 )
-                .map_err(|e| fdo::Error::Failed(format!("Failed to ensure models: {e}")))?,
+                .map_err(|e| fdo::Error::Failed(format!("无法准备模型：{e}")))?,
             )
         } else {
             None
         };
         let new_detector = if reload.detector {
-            let (path, _) = paths
-                .as_ref()
-                .expect("detector reload requires model paths");
+            let (path, _) = paths.as_ref().expect("重新加载检测器需要模型路径");
             Some(
                 FaceDetector::new_with_inference(path.to_str().unwrap(), &new_config.inference)
-                    .map_err(|e| fdo::Error::Failed(format!("Failed to load detector: {e}")))?,
+                    .map_err(|e| fdo::Error::Failed(format!("无法加载检测器：{e}")))?,
             )
         } else {
             None
         };
         let new_recognizers = if reload.recognizer {
-            let (_, path) = paths
-                .as_ref()
-                .expect("recognizer reload requires model paths");
-            let rgb = FaceRecognizer::new_with_inference(
-                path.to_str().unwrap(),
-                &new_config.inference,
-            )
-            .map_err(|e| fdo::Error::Failed(format!("Failed to load RGB recognizer: {e}")))?;
+            let (_, path) = paths.as_ref().expect("重新加载识别器需要模型路径");
+            let rgb =
+                FaceRecognizer::new_with_inference(path.to_str().unwrap(), &new_config.inference)
+                    .map_err(|e| fdo::Error::Failed(format!("无法加载 RGB 识别器：{e}")))?;
             let ir =
                 FaceRecognizer::new_with_inference(path.to_str().unwrap(), &new_config.inference)
-                    .map_err(|e| fdo::Error::Failed(format!("Failed to load IR recognizer: {e}")))?;
+                    .map_err(|e| fdo::Error::Failed(format!("无法加载红外识别器：{e}")))?;
             Some((rgb, ir))
         } else {
             None
         };
         let new_liveness_detector = if reload.liveness && new_config.liveness.enabled {
             let path = crate::models::ensure_liveness_model(gaze_core::config::MODELS_DIR)
-                .map_err(|e| fdo::Error::Failed(format!("Failed to ensure liveness model: {e}")))?;
+                .map_err(|e| fdo::Error::Failed(format!("无法准备活体检测模型：{e}")))?;
             Some(
                 LivenessDetector::new_with_inference(path.to_str().unwrap(), &new_config.inference)
-                    .map_err(|e| {
-                        fdo::Error::Failed(format!("Failed to load liveness model: {e}"))
-                    })?,
+                    .map_err(|e| fdo::Error::Failed(format!("无法加载活体检测模型：{e}")))?,
             )
         } else {
             None
@@ -214,9 +204,7 @@ impl AuthDaemon {
             if want_encrypt != db.is_encrypted() {
                 let dek =
                     crate::tpm::load_or_create_dek(std::path::Path::new(crate::tpm::STATE_DIR))
-                        .map_err(|e| {
-                            fdo::Error::Failed(format!("cannot change template encryption: {e}"))
-                        })?;
+                        .map_err(|e| fdo::Error::Failed(format!("无法更改模板加密：{e}")))?;
                 Some(crate::crypto::EmbeddingCipher::new(&dek))
             } else {
                 None
@@ -226,7 +214,7 @@ impl AuthDaemon {
         let save_config = || {
             new_config
                 .save_to(CONFIG_PATH)
-                .map_err(|e| fdo::Error::Failed(format!("Failed to save config: {e}")))
+                .map_err(|e| fdo::Error::Failed(format!("无法保存配置：{e}")))
         };
 
         match pending_cipher {
@@ -234,16 +222,16 @@ impl AuthDaemon {
                 save_config()?;
                 let mut db = self.db.lock().await;
                 db.set_cipher(Some(cipher));
-                let n = db.migrate_plaintext_to_encrypted().map_err(|e| {
-                    fdo::Error::Failed(format!("failed to encrypt existing templates: {e}"))
-                })?;
+                let n = db
+                    .migrate_plaintext_to_encrypted()
+                    .map_err(|e| fdo::Error::Failed(format!("无法加密现有模板：{e}")))?;
                 info!(migrated = n, "Enabled template encryption");
             }
             Some(cipher) => {
                 let mut db = self.db.lock().await;
-                let n = db.decrypt_all_with(&cipher).map_err(|e| {
-                    fdo::Error::Failed(format!("failed to decrypt existing templates: {e}"))
-                })?;
+                let n = db
+                    .decrypt_all_with(&cipher)
+                    .map_err(|e| fdo::Error::Failed(format!("无法解密现有模板：{e}")))?;
                 db.set_cipher(None);
                 drop(db);
                 save_config()?;

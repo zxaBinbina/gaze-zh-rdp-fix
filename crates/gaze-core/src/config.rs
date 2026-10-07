@@ -13,22 +13,24 @@ pub const USERS_DIR: &str = "/var/lib/gaze/users";
 pub const MODELS_DIR: &str = "/var/cache/gaze";
 pub const DEFAULT_RGB_CAMERA: &str = "primary";
 pub const SECURITY_LEVEL_OPTIONS: [&str; 5] = ["low", "medium", "high", "maximum", "custom"];
-pub const SECURITY_LEVEL_LABELS: [&str; 5] = ["Low", "Medium", "High", "Maximum", "Custom"];
+pub const SECURITY_LEVEL_LABELS: [&str; 5] = ["低", "中", "高", "最高", "自定义"];
 pub const MODEL_QUALITY_OPTIONS: [&str; 2] = ["standard", "accurate"];
-pub const MODEL_QUALITY_LABELS: [&str; 2] = ["Standard", "Accurate"];
+pub const MODEL_QUALITY_LABELS: [&str; 2] = ["标准", "精确"];
 pub const HYBRID_POLICY_OPTIONS: [&str; 4] = ["default", "or", "fallback_on_dark", "and"];
-pub const HYBRID_POLICY_LABELS: [&str; 4] = ["Default", "Or", "Fallback on Dark", "And"];
+pub const HYBRID_POLICY_LABELS: [&str; 4] = ["默认", "任一通过", "暗光时回退", "全部通过"];
 pub const PARALLEL_CAPTURE_OPTIONS: [&str; 3] = ["never", "auto", "always"];
 pub const PARALLEL_CAPTURE_LABELS: [&str; 3] = [
-    "Never (capture RGB, then IR)",
-    "Auto (parallel when the camera allows it)",
-    "Always (capture RGB and IR at once)",
+    "从不（先采集 RGB，再采集红外）",
+    "自动（摄像头支持时并行采集）",
+    "始终（同时采集 RGB 和红外）",
 ];
 pub const START_DELAY_SCOPE_OPTIONS: [&str; 2] = ["all", "screen_lock"];
-pub const START_DELAY_SCOPE_LABELS: [&str; 2] =
-    ["Every face auth (including sudo)", "Screen lockers only"];
+pub const START_DELAY_SCOPE_LABELS: [&str; 2] = ["所有人脸认证（包括 sudo）", "仅锁屏"];
 // Clients validate syntax independently of the daemon's installed vendor runtime.
 pub const INFERENCE_EXECUTION_PROVIDER_OPTIONS: [&str; 4] = ["cpu", "auto", "openvino", "vitis"];
+pub const INFERENCE_EXECUTION_PROVIDER_LABELS: [&str; 4] =
+    ["CPU", "自动", "Intel OpenVINO", "AMD Ryzen AI"];
+pub const INFERENCE_DEVICE_LABELS: [&str; 3] = ["CPU", "GPU", "NPU"];
 pub const INFERENCE_DEVICE_OPTIONS: [&str; 3] = ["cpu", "gpu", "npu"];
 pub const DEFAULT_ENROLLMENT_MIN_FACE_SIZE_RATIO: f64 = 0.25;
 pub const MIN_ENROLLMENT_FACE_SIZE_RATIO: f64 = 0.10;
@@ -297,7 +299,7 @@ impl SecurityLevel {
                 _ => "det_500m.onnx",
             },
             other => {
-                tracing::warn!("Invalid security level {other:?}; using medium detector");
+                tracing::warn!("安全级别 {other:?} 无效；使用中等级别检测器");
                 "det_500m.onnx"
             }
         }
@@ -312,7 +314,7 @@ impl SecurityLevel {
                 _ => "w600k_mbf.onnx",
             },
             other => {
-                tracing::warn!("Invalid security level {other:?}; using medium recognizer");
+                tracing::warn!("安全级别 {other:?} 无效；使用中等级别识别器");
                 "w600k_mbf.onnx"
             }
         }
@@ -342,7 +344,7 @@ impl SecurityLevel {
             errors.push(SecurityValidationError {
                 field: SecurityField::Level,
                 message: format!(
-                    "invalid security level {:?}: expected one of {:?}",
+                    "安全级别 {:?} 无效：应为 {:?} 中的一项",
                     self.level, SECURITY_LEVEL_OPTIONS
                 ),
             });
@@ -360,7 +362,7 @@ impl SecurityLevel {
                 errors.push(SecurityValidationError {
                     field: SecurityField::ModelQuality,
                     message: format!(
-                        "invalid {name} level {quality:?}: expected \"standard\" or \"accurate\""
+                        "{name} 级别 {quality:?} 无效：应为 \"standard\" 或 \"accurate\""
                     ),
                 });
             }
@@ -373,7 +375,7 @@ impl SecurityLevel {
                 errors.push(SecurityValidationError {
                     field: SecurityField::Threshold,
                     message: format!(
-                        "security.{name} must be between {MIN_SECURITY_THRESHOLD} and {MAX_SECURITY_THRESHOLD}, got {threshold}"
+                        "security.{name} 必须介于 {MIN_SECURITY_THRESHOLD} 和 {MAX_SECURITY_THRESHOLD} 之间，当前为 {threshold}"
                     ),
                 });
             }
@@ -384,7 +386,7 @@ impl SecurityLevel {
             errors.push(SecurityValidationError {
                 field: SecurityField::HybridPolicy,
                 message: format!(
-                    "invalid security.hybrid_policy {:?}: expected one of {:?}",
+                    "security.hybrid_policy {:?} 无效：应为 {:?} 中的一项",
                     self.hybrid_policy, HYBRID_POLICY_OPTIONS
                 ),
             });
@@ -429,7 +431,7 @@ impl SecurityLevel {
                 tracing::warn!(
                     spectrum,
                     threshold = custom_threshold,
-                    "security threshold is out of range; using the medium default"
+                    "安全阈值超出范围；使用中等级别默认值"
                 );
                 DEFAULT_SECURITY_THRESHOLD as f32
             }
@@ -503,26 +505,26 @@ impl InferenceConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
         if !INFERENCE_EXECUTION_PROVIDER_OPTIONS.contains(&self.execution_provider.as_str()) {
             anyhow::bail!(
-                "invalid inference.execution_provider {:?}: expected one of {:?}",
+                "inference.execution_provider {:?} 无效：应为 {:?} 中的一项",
                 self.execution_provider,
                 INFERENCE_EXECUTION_PROVIDER_OPTIONS
             );
         }
         if !INFERENCE_DEVICE_OPTIONS.contains(&self.device.as_str()) {
             anyhow::bail!(
-                "invalid inference.device {:?}: expected one of {:?}",
+                "inference.device {:?} 无效：应为 {:?} 中的一项",
                 self.device,
                 INFERENCE_DEVICE_OPTIONS
             );
         }
         if self.execution_provider == "cpu" && self.device != "cpu" {
             anyhow::bail!(
-                "inference.device must be \"cpu\" when inference.execution_provider is \"cpu\""
+                "inference.execution_provider 为 \"cpu\" 时，inference.device 必须为 \"cpu\""
             );
         }
         if matches!(self.execution_provider.as_str(), "auto" | "vitis") && self.device != "npu" {
             anyhow::bail!(
-                "inference.device must be \"npu\" when inference.execution_provider is {:?}",
+                "inference.execution_provider 为 {:?} 时，inference.device 必须为 \"npu\"",
                 self.execution_provider
             );
         }
@@ -583,7 +585,7 @@ impl StorageConfig {
         if (self.unlock_gnome_keyring || self.unlock_kwallet)
             && (!self.encrypt_templates || !liveness.enabled)
         {
-            anyhow::bail!("keyring unlock requires storage.encrypt_templates and liveness.enabled");
+            anyhow::bail!("钥匙环解锁需要启用 storage.encrypt_templates 和 liveness.enabled");
         }
         Ok(())
     }
@@ -621,7 +623,7 @@ impl DuressConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
         if !Self::closed_threshold_in_range(self.closed_threshold) {
             anyhow::bail!(
-                "duress.closed_threshold must be between {} and {}, got {}",
+                "duress.closed_threshold 必须介于 {} 和 {} 之间，当前为 {}",
                 MIN_DURESS_CLOSED_THRESHOLD,
                 MAX_DURESS_CLOSED_THRESHOLD,
                 self.closed_threshold
@@ -629,7 +631,7 @@ impl DuressConfig {
         }
         if self.hold_ms > MAX_DURESS_HOLD_MS {
             anyhow::bail!(
-                "duress.hold_ms must be at most {}, got {}",
+                "duress.hold_ms 不得超过 {}，当前为 {}",
                 MAX_DURESS_HOLD_MS,
                 self.hold_ms
             );
@@ -689,7 +691,7 @@ impl LivenessConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
         if !Self::threshold_in_range(self.threshold) {
             anyhow::bail!(
-                "liveness.threshold must be between {} and {}, got {}",
+                "liveness.threshold 必须介于 {} 和 {} 之间，当前为 {}",
                 MIN_LIVENESS_THRESHOLD,
                 MAX_LIVENESS_THRESHOLD,
                 self.threshold
@@ -697,7 +699,7 @@ impl LivenessConfig {
         }
         if !Self::max_seconds_in_range(self.max_seconds) {
             anyhow::bail!(
-                "liveness.max_seconds must be between {} and {}, got {}",
+                "liveness.max_seconds 必须介于 {} 和 {} 之间，当前为 {}",
                 MIN_LIVENESS_MAX_SECONDS,
                 MAX_LIVENESS_MAX_SECONDS,
                 self.max_seconds
@@ -781,21 +783,20 @@ impl CameraConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
         if !PARALLEL_CAPTURE_OPTIONS.contains(&self.parallel_capture.as_str()) {
             anyhow::bail!(
-                "invalid cameras.parallel_capture {:?}: expected one of {:?}",
+                "cameras.parallel_capture {:?} 无效：应为 {:?} 中的一项",
                 self.parallel_capture,
                 PARALLEL_CAPTURE_OPTIONS
             );
         }
         match (self.ir_frame_width, self.ir_frame_height) {
             (None, None) => {}
-            (Some(_), None) | (None, Some(_)) => anyhow::bail!(
-                "cameras.ir_frame_width and cameras.ir_frame_height must be set together"
-            ),
+            (Some(_), None) | (None, Some(_)) => {
+                anyhow::bail!("cameras.ir_frame_width 和 cameras.ir_frame_height 必须同时设置")
+            }
             (Some(width), Some(height)) => {
                 if !ir_frame_dimension_valid(width) || !ir_frame_dimension_valid(height) {
                     anyhow::bail!(
-                        "cameras.ir_frame_width and cameras.ir_frame_height must be between 1 and \
-                         {MAX_IR_FRAME_DIMENSION}, got {width}x{height}"
+                        "cameras.ir_frame_width 和 cameras.ir_frame_height 必须介于 1 和 {MAX_IR_FRAME_DIMENSION} 之间，当前为 {width}x{height}"
                     );
                 }
             }
@@ -959,7 +960,7 @@ impl AuthConfig {
             "screen_lock" => "screen_lock",
             "" | "all" => "all",
             other => {
-                tracing::warn!("Invalid start delay scope {other:?}; delaying every auth");
+                tracing::warn!("启动延迟范围 {other:?} 无效；将延迟所有认证");
                 "all"
             }
         }
@@ -1037,7 +1038,7 @@ impl EnrollmentConfig {
                 .contains(&self.min_face_size_ratio)
         {
             anyhow::bail!(
-                "enrollment.min_face_size_ratio must be between {} and {}, got {}",
+                "enrollment.min_face_size_ratio 必须介于 {} 和 {} 之间，当前为 {}",
                 MIN_ENROLLMENT_FACE_SIZE_RATIO,
                 MAX_ENROLLMENT_FACE_SIZE_RATIO,
                 self.min_face_size_ratio
@@ -1158,11 +1159,11 @@ pub fn unknown_config_keys(contents: &str) -> Vec<String> {
 fn replace_file_atomically(path: &Path, contents: &str) -> std::io::Result<()> {
     let parent = path
         .parent()
-        .ok_or_else(|| std::io::Error::other("config path must have a parent directory"))?;
+        .ok_or_else(|| std::io::Error::other("配置路径必须包含父目录"))?;
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| std::io::Error::other("config path must have a valid file name"))?;
+        .ok_or_else(|| std::io::Error::other("配置路径必须包含有效的文件名"))?;
     let mode = std::fs::metadata(path)
         .map(|meta| meta.permissions().mode() & 0o777)
         .unwrap_or(DEFAULT_CONFIG_MODE);
@@ -1201,8 +1202,8 @@ impl Config {
             return;
         };
         match replace_file_atomically(Path::new(path), &migrated) {
-            Ok(()) => tracing::info!("Migrated legacy configuration in {path}"),
-            Err(e) => tracing::warn!("Failed to write migrated config to {path}: {e}"),
+            Ok(()) => tracing::info!("已迁移 {path} 中的旧配置"),
+            Err(e) => tracing::warn!("无法将迁移后的配置写入 {path}：{e}"),
         }
     }
 
@@ -1213,28 +1214,28 @@ impl Config {
             let config: Config = toml_edit::de::from_str(&contents)?;
             for key in unknown_config_keys(&contents) {
                 tracing::warn!(
-                    "{path} sets {key}, which Gaze does not read; it has no effect and is probably a typo"
+                    "{path} 设置了 {key}，但 Gaze 不读取此项；它不会生效，可能是拼写错误"
                 );
             }
             // Keep startup available for an invalid level: warn and let the total
             // accessors fall back. `set_config` rejects invalid admin input earlier.
             if let Err(e) = config.security.validate() {
-                tracing::warn!("{e}; using safe fallbacks for invalid security fields");
+                tracing::warn!("{e}；对无效的安全配置项使用安全的默认值");
             }
             if let Err(e) = config.enrollment.validate() {
-                tracing::warn!("{e}; using the default enrollment face-size ratio");
+                tracing::warn!("{e}；使用默认的录入人脸尺寸比例");
             }
             if let Err(e) = config.inference.validate() {
-                tracing::warn!("{e}; inference configuration will be checked when models load");
+                tracing::warn!("{e}；将在模型加载时检查推理配置");
             }
             if let Err(e) = config.liveness.validate() {
-                tracing::warn!("{e}; using the default liveness settings");
+                tracing::warn!("{e}；使用默认的活体检测设置");
             }
             if let Err(e) = config.cameras.validate() {
-                tracing::warn!("{e}; using the default for the invalid camera setting");
+                tracing::warn!("{e}；对无效的摄像头设置使用默认值");
             }
             if let Err(e) = config.duress.validate() {
-                tracing::warn!("{e}; using the default duress settings");
+                tracing::warn!("{e}；使用默认的胁迫检测设置");
             }
             Ok(config)
         } else {
@@ -1259,32 +1260,24 @@ impl Config {
                 toml_edit::ser::to_string_pretty(self)
                     .unwrap_or_else(|_| String::from("# unwritable\n"))
             });
-        let parent = path
-            .parent()
-            .context("config path must have a parent directory")?;
+        let parent = path.parent().context("配置路径必须包含父目录")?;
         let file_name = path
             .file_name()
             .and_then(|n| n.to_str())
-            .context("config path must have a valid file name")?;
+            .context("配置路径必须包含有效的文件名")?;
         let tmp_path = parent.join(format!(".{file_name}.{}.tmp", std::process::id()));
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .mode(0o600)
             .open(&tmp_path)
-            .with_context(|| {
-                format!(
-                    "failed to create temporary config file: {}",
-                    tmp_path.display()
-                )
-            })?;
+            .with_context(|| format!("无法创建临时配置文件：{}", tmp_path.display()))?;
         if let Err(err) = file
             .write_all(encoded.as_bytes())
             .and_then(|_| file.flush())
         {
             let _ = std::fs::remove_file(&tmp_path);
-            return Err(err)
-                .with_context(|| format!("failed to write config file: {}", path.display()));
+            return Err(err).with_context(|| format!("无法写入配置文件：{}", path.display()));
         }
         drop(file);
         let target_mode = existing_mode.unwrap_or(DEFAULT_CONFIG_MODE);
@@ -1292,12 +1285,11 @@ impl Config {
             std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(target_mode))
         {
             let _ = std::fs::remove_file(&tmp_path);
-            return Err(err).with_context(|| {
-                format!("failed to set mode {target_mode:o} on {}", path.display())
-            });
+            return Err(err)
+                .with_context(|| format!("无法为 {} 设置权限 {target_mode:o}", path.display()));
         }
         std::fs::rename(&tmp_path, path)
-            .with_context(|| format!("failed to replace config file: {}", path.display()))?;
+            .with_context(|| format!("无法替换配置文件：{}", path.display()))?;
         Ok(())
     }
 

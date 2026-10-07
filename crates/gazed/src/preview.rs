@@ -14,10 +14,7 @@ const PREVIEW_QUALITY: u8 = 88;
 
 pub fn encode_preview(frame: &Mat) -> anyhow::Result<Vec<u8>> {
     let size = frame.size()?;
-    anyhow::ensure!(
-        size.width > 0 && size.height > 0,
-        "preview frame has no pixels"
-    );
+    anyhow::ensure!(size.width > 0 && size.height > 0, "预览帧没有像素");
 
     let width = size.width.min(PREVIEW_MAX_WIDTH);
     let height =
@@ -45,7 +42,7 @@ pub fn encode_preview(frame: &Mat) -> anyhow::Result<Vec<u8>> {
     let expected = (width as usize) * (height as usize) * 3;
     anyhow::ensure!(
         rgb.is_continuous() && pixels.len() == expected,
-        "preview frame is not a continuous {width}x{height} RGB buffer"
+        "预览帧不是连续的 {width}x{height} RGB 缓冲区"
     );
 
     let mut jpeg = Vec::new();

@@ -40,7 +40,7 @@ fn local_device_context() -> anyhow::Result<Context> {
             }
         }
     }
-    Err(anyhow!("no usable local TPM 2.0 device"))
+    Err(anyhow!("没有可用的本地 TPM 2.0 设备"))
 }
 
 // Nothing about this parent is stored on disk. CreatePrimary re-derives the identical key
@@ -55,7 +55,7 @@ fn create_primary(context: &mut Context) -> anyhow::Result<tss_esapi::handles::K
         .with_sign_encrypt(false)
         .with_restricted(true)
         .build()
-        .context("failed to build primary object attributes")?;
+        .context("无法构建主对象属性")?;
     let params = PublicEccParametersBuilder::new()
         .with_ecc_scheme(EccScheme::Null)
         .with_curve(EccCurve::NistP256)
@@ -68,7 +68,7 @@ fn create_primary(context: &mut Context) -> anyhow::Result<tss_esapi::handles::K
         })
         .with_key_derivation_function_scheme(KeyDerivationFunctionScheme::Null)
         .build()
-        .context("failed to build primary ECC parameters")?;
+        .context("无法构建主 ECC 参数")?;
     let public = PublicBuilder::new()
         .with_public_algorithm(PublicAlgorithm::Ecc)
         .with_name_hashing_algorithm(HashingAlgorithm::Sha256)
@@ -76,12 +76,12 @@ fn create_primary(context: &mut Context) -> anyhow::Result<tss_esapi::handles::K
         .with_ecc_parameters(params)
         .with_ecc_unique_identifier(EccPoint::default())
         .build()
-        .context("failed to build primary public template")?;
+        .context("无法构建主公共模板")?;
     Ok(context
         .execute_with_nullauth_session(|ctx| {
             ctx.create_primary(Hierarchy::Owner, public, None, None, None, None)
         })
-        .context("TPM CreatePrimary failed")?
+        .context("TPM CreatePrimary 失败")?
         .key_handle)
 }
 
@@ -96,7 +96,7 @@ pub fn sealed_object_public() -> anyhow::Result<Public> {
         .with_decrypt(false)
         .with_restricted(false)
         .build()
-        .context("failed to build sealed-object attributes")?;
+        .context("无法构建密封对象属性")?;
     PublicBuilder::new()
         .with_public_algorithm(PublicAlgorithm::KeyedHash)
         .with_name_hashing_algorithm(HashingAlgorithm::Sha256)
@@ -104,19 +104,19 @@ pub fn sealed_object_public() -> anyhow::Result<Public> {
         .with_keyed_hash_parameters(PublicKeyedHashParameters::new(KeyedHashScheme::Null))
         .with_keyed_hash_unique_identifier(Digest::default())
         .build()
-        .context("failed to build sealed-object public template")
+        .context("无法构建密封对象公共模板")
 }
 
 pub fn seal_in(context: &mut Context, key: &[u8; KEY_LEN]) -> anyhow::Result<(Public, Private)> {
     let public = sealed_object_public()?;
     let sensitive =
-        SensitiveData::try_from(key.to_vec()).map_err(|e| anyhow!("invalid key length: {e}"))?;
+        SensitiveData::try_from(key.to_vec()).map_err(|e| anyhow!("密钥长度无效：{e}"))?;
     let parent = create_primary(context)?;
     let result = context.execute_with_nullauth_session(|ctx| {
         ctx.create(parent, public, None, Some(sensitive), None, None)
     });
     let _ = context.flush_context(parent.into());
-    let created = result.context("TPM Create (seal) failed")?;
+    let created = result.context("TPM Create（密封）失败")?;
     Ok((created.out_public, created.out_private))
 }
 
@@ -135,11 +135,11 @@ pub fn unseal_in(
     let _ = context.flush_context(parent.into());
 
     // SensitiveData holds a Zeroizing buffer, so the only copy to guard is the one we return.
-    let sensitive = result.context("TPM Load/Unseal failed")?;
+    let sensitive = result.context("TPM Load/Unseal 失败")?;
     let bytes = sensitive.value();
     let key: [u8; KEY_LEN] = bytes.try_into().map_err(|_| {
         anyhow!(
-            "unsealed key has unexpected length {} (expected {KEY_LEN})",
+            "解封后的密钥长度异常，为 {}（预期为 {KEY_LEN}）",
             bytes.len()
         )
     })?;

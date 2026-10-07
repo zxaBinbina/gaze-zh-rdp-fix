@@ -58,7 +58,7 @@ pub fn load_module(module: &str) -> anyhow::Result<()> {
     let path = policy_path(module);
     anyhow::ensure!(
         Path::new(&path).exists(),
-        "{path} is missing; reinstall the Gaze package"
+        "{path} 不存在；请重新安装 Gaze 软件包"
     );
     let output = Command::new("semodule").arg("-i").arg(&path).output()?;
     anyhow::ensure!(

@@ -17,19 +17,16 @@ pub(super) fn detected_source_remedy(
     if detected.is_empty() {
         return match automatic {
             Some(automatic) => format!(
-                "No PipeWire source is currently advertised. Reconnect the camera, then set \
-                 {key} to a detected source, or to \"{automatic}\" to resolve it at runtime."
+                "当前未提供 PipeWire 来源。重新连接摄像头，然后将 {key} 设为检测到的来源，或设为 \"{automatic}\" 以便在运行时解析。"
             ),
-            None => format!(
-                "No PipeWire source is currently advertised. Reconnect the camera, then set \
-                 {key} to a detected source."
-            ),
+            None => {
+                format!("当前未提供 PipeWire 来源。重新连接摄像头，然后将 {key} 设为检测到的来源。")
+            }
         };
     }
 
     format!(
-        "Run `gaze config` to pick one interactively, or set {key} to one of the detected \
-         sources: {}",
+        "运行 `gaze config` 交互式选择，或将 {key} 设为检测到的来源之一：{}",
         detected
             .iter()
             .map(|target| format!("\"{target}\""))
@@ -44,21 +41,21 @@ pub(super) fn gstreamer_package_hint_for(os_release: &str) -> &'static str {
         .iter()
         .any(|family| os_release.contains(family))
     {
-        "Install them with `sudo pacman -S gst-plugins-base gst-plugins-good gst-plugin-pipewire`."
+        "使用 `sudo pacman -S gst-plugins-base gst-plugins-good gst-plugin-pipewire` 安装。"
     } else if ["debian", "ubuntu"]
         .iter()
         .any(|family| os_release.contains(family))
     {
-        "Install them with `sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pipewire`."
+        "使用 `sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pipewire` 安装。"
     } else if ["fedora", "rhel", "centos"]
         .iter()
         .any(|family| os_release.contains(family))
     {
-        "Install them with `sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good pipewire-gstreamer`."
+        "使用 `sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good pipewire-gstreamer` 安装。"
     } else if os_release.contains("suse") {
-        "Install them with `sudo zypper install gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugin-pipewire`."
+        "使用 `sudo zypper install gstreamer-plugins-base gstreamer-plugins-good gstreamer-plugin-pipewire` 安装。"
     } else {
-        "Install the GStreamer base, good, and PipeWire plugin packages for this distribution."
+        "安装此发行版的 GStreamer base、good 和 PipeWire 插件包。"
     }
 }
 
@@ -71,26 +68,23 @@ pub(super) fn check_gstreamer_plugins(report: &mut Report) -> bool {
     match gaze_vision::camera::missing_camera_elements() {
         Ok(missing) if missing.is_empty() => {
             report.pass(
-                "GStreamer plugins",
-                "base, JPEG/V4L2, and PipeWire camera elements are available",
+                "GStreamer 插件",
+                "base、JPEG/V4L2 和 PipeWire 摄像头组件可用",
             );
             true
         }
         Ok(missing) => {
             report.error(
-                "GStreamer plugins",
-                format!(
-                    "required camera elements are missing: {}",
-                    missing.join(", ")
-                ),
+                "GStreamer 插件",
+                format!("缺少必需的摄像头组件：{}", missing.join(", ")),
                 gstreamer_package_hint(),
             );
             false
         }
         Err(err) => {
             report.error(
-                "GStreamer plugins",
-                format!("the plugin registry could not be initialized: {err}"),
+                "GStreamer 插件",
+                format!("无法初始化插件注册表：{err}"),
                 gstreamer_package_hint(),
             );
             false
@@ -118,23 +112,23 @@ pub(super) fn check_cameras(report: &mut Report, config: Option<&Config>) {
                 if rgb == gaze_core::config::DEFAULT_RGB_CAMERA {
                     if detected > 0 {
                         report.pass(
-                            "RGB camera",
-                            format!("{detected} color camera(s) visible through PipeWire"),
+                            "RGB 摄像头",
+                            format!("通过 PipeWire 可见 {detected} 个彩色摄像头"),
                         );
                     } else {
                         report.warning(
-                            "RGB camera",
-                            "no physical color camera was advertised by PipeWire",
-                            "Check camera privacy controls and run `gaze config` from the local desktop session.",
+                            "RGB 摄像头",
+                            "PipeWire 未提供物理彩色摄像头",
+                            "请检查摄像头隐私控制，并在本地桌面会话中运行 `gaze config`。",
                         );
                     }
                 } else if rgb.starts_with("pipewiresrc target-object=") {
                     if cameras.iter().any(|(_, target)| target == rgb) {
-                        report.pass("RGB camera", "the configured PipeWire source is visible");
+                        report.pass("RGB 摄像头", "已配置的 PipeWire 来源可见");
                     } else {
                         report.error(
-                            "RGB camera",
-                            format!("configured source is not visible: {rgb}"),
+                            "RGB 摄像头",
+                            format!("已配置的来源不可见：{rgb}"),
                             detected_source_remedy(
                                 &cameras,
                                 "cameras.rgb",
@@ -144,37 +138,37 @@ pub(super) fn check_cameras(report: &mut Report, config: Option<&Config>) {
                     }
                 } else if let Some((vid, pid)) = gaze_vision::camera::parse_usb_spec(rgb) {
                     report.pass(
-                        "RGB camera",
-                        format!("resolves the color node for USB {vid:04x}:{pid:04x} at runtime"),
+                        "RGB 摄像头",
+                        format!("在运行时解析 USB {vid:04x}:{pid:04x} 的彩色节点"),
                     );
                 } else if rgb.starts_with("/dev/video") {
                     match fs::metadata(rgb) {
                         Ok(metadata) if metadata.file_type().is_char_device() => {
-                            report.pass("RGB camera", format!("{rgb} is a character device"));
+                            report.pass("RGB 摄像头", format!("{rgb} 是字符设备"));
                         }
                         Ok(_) => report.error(
-                            "RGB camera",
-                            format!("{rgb} is not a character device"),
-                            "Point cameras.rgb at a /dev/video* node.",
+                            "RGB 摄像头",
+                            format!("{rgb} 不是字符设备"),
+                            "将 cameras.rgb 指向 /dev/video* 节点。",
                         ),
                         Err(err) => report.error(
-                            "RGB camera",
-                            format!("{rgb} is not accessible: {err}"),
-                            "Check the device path and permissions.",
+                            "RGB 摄像头",
+                            format!("无法访问 {rgb}：{err}"),
+                            "检查设备路径和权限。",
                         ),
                     }
                 } else {
                     report.warning(
-                        "RGB camera",
-                        "a custom GStreamer source is configured and was not opened by this read-only check",
-                        "Run `gaze auth` to verify that the custom source produces frames.",
+                        "RGB 摄像头",
+                        "已配置自定义 GStreamer 来源，本次只读检查未打开该来源",
+                        "运行 `gaze auth`，确认自定义来源能输出画面。",
                     );
                 }
             }
             Err(err) => report.error(
-                "RGB camera",
-                format!("GStreamer camera enumeration failed: {err}"),
-                "Verify the GStreamer PipeWire plugin is installed and PipeWire is running.",
+                "RGB 摄像头",
+                format!("GStreamer 摄像头枚举失败：{err}"),
+                "请确认已安装 GStreamer PipeWire 插件且 PipeWire 正在运行。",
             ),
         }
     }
@@ -186,45 +180,45 @@ pub(super) fn check_cameras(report: &mut Report, config: Option<&Config>) {
     if ir.starts_with("/dev/video") {
         match fs::metadata(ir) {
             Ok(metadata) if metadata.file_type().is_char_device() => {
-                report.pass("IR camera", format!("{ir} is a character device"));
+                report.pass("红外摄像头", format!("{ir} 是字符设备"));
             }
             Ok(_) => report.error(
-                "IR camera",
-                format!("{ir} is not a device node"),
-                "Choose the IR camera's /dev/video* node.",
+                "红外摄像头",
+                format!("{ir} 不是设备节点"),
+                "请选择红外摄像头的 /dev/video* 节点。",
             ),
             Err(err) => report.error(
-                "IR camera",
-                format!("cannot access {ir}: {err}"),
-                "Correct cameras.ir or reconnect the IR camera.",
+                "红外摄像头",
+                format!("无法访问 {ir}：{err}"),
+                "修正 cameras.ir 或重新连接红外摄像头。",
             ),
         }
     } else if ir.starts_with("pipewiresrc target-object=") {
         match gaze_vision::camera::enumerate_ir_cameras() {
             Ok(cameras) if cameras.iter().any(|(_, target)| target == ir) => {
-                report.pass("IR camera", "the configured PipeWire source is visible");
+                report.pass("红外摄像头", "已配置的 PipeWire 来源可见");
             }
             Ok(cameras) => report.error(
-                "IR camera",
-                format!("configured source is not visible: {ir}"),
+                "红外摄像头",
+                format!("已配置的来源不可见：{ir}"),
                 detected_source_remedy(&cameras, "cameras.ir", None),
             ),
             Err(err) => report.error(
-                "IR camera",
-                format!("GStreamer IR camera enumeration failed: {err}"),
-                "Verify PipeWire is running and the IR device is connected.",
+                "红外摄像头",
+                format!("GStreamer 红外摄像头枚举失败：{err}"),
+                "请确认 PipeWire 正在运行且已连接红外设备。",
             ),
         }
     } else if let Some((vid, pid)) = gaze_vision::camera::parse_usb_spec(ir) {
         report.pass(
-            "IR camera",
-            format!("resolves the IR node for USB {vid:04x}:{pid:04x} at runtime"),
+            "红外摄像头",
+            format!("在运行时解析 USB {vid:04x}:{pid:04x} 的红外节点"),
         );
     } else {
         report.warning(
-            "IR camera",
-            "a custom GStreamer source is configured and was not opened by this read-only check",
-            "Run `gaze auth` to verify that the IR source produces frames.",
+            "红外摄像头",
+            "已配置自定义 GStreamer 来源，本次只读检查未打开该来源",
+            "运行 `gaze auth`，确认红外来源能输出画面。",
         );
     }
 
@@ -240,14 +234,13 @@ pub(super) fn check_i2c_emitter(report: &mut Report, ir: &str) {
     match gaze_core::ir::i2c::I2cEmitter::diagnose(&node) {
         None => {}
         Some(Ok(emitter)) => report.pass(
-            "IR emitter",
-            format!("{} matches {node} on {}", emitter.name(), emitter.bus()),
+            "红外发射器",
+            format!("{} 匹配 {} 上的 {node}", emitter.name(), emitter.bus()),
         ),
         Some(Err(reason)) => report.warning(
-            "IR emitter",
-            format!("the I2C emitter profile for {node} does not apply: {reason}"),
-            "Load the i2c-dev module, make sure the IR bridge is running, and check that the \
-             sensor driver is bound. Authentication continues without illumination until then.",
+            "红外发射器",
+            format!("{node} 的 I2C 发射器配置不适用：{reason}"),
+            "加载 i2c-dev 模块，确认红外桥接正在运行且已绑定传感器驱动。在此之前，认证将继续在无照明状态下进行。",
         ),
     }
 }
@@ -303,7 +296,7 @@ mod tests {
     fn camera_remedy_lists_detected_sources() {
         let cameras = vec![
             (
-                "Primary camera".to_string(),
+                "主摄像头".to_string(),
                 gaze_core::config::DEFAULT_RGB_CAMERA.to_string(),
             ),
             (
@@ -331,7 +324,7 @@ mod tests {
     #[test]
     fn camera_remedy_only_offers_primary_where_it_is_valid() {
         let none_detected = vec![(
-            "Primary camera".to_string(),
+            "主摄像头".to_string(),
             gaze_core::config::DEFAULT_RGB_CAMERA.to_string(),
         )];
 

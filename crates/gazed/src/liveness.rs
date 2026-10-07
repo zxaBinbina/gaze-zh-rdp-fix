@@ -77,7 +77,7 @@ impl LivenessDetector {
     /// two spoof classes. Softmax over all three, shifted by the max to keep exponentials finite.
     fn live_score_from_output(data: &[f32]) -> anyhow::Result<f32> {
         if data.len() != 3 {
-            anyhow::bail!("liveness model produced {} scores, expected 3", data.len());
+            anyhow::bail!("活体检测模型输出了 {} 个分数，预期为 3", data.len());
         }
         let max = data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
         let first_attack = (data[0] - max).exp();
@@ -95,7 +95,7 @@ pub fn crop_face(
     let width = x2 - x1;
     let height = y2 - y1;
     if width <= 0.0 || height <= 0.0 {
-        anyhow::bail!("invalid face crop bounds");
+        anyhow::bail!("人脸裁剪边界无效");
     }
 
     let img_w = img.width() as f32;
@@ -138,7 +138,7 @@ pub fn crop_face(
     let bottom = bottom.max(0.0) as u32;
 
     if right < left || bottom < top {
-        anyhow::bail!("invalid face crop bounds");
+        anyhow::bail!("人脸裁剪边界无效");
     }
 
     let crop = crop_imm(img, left, top, right - left + 1, bottom - top + 1);

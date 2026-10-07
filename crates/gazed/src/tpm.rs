@@ -25,40 +25,32 @@ const PRIV_FILE: &str = "dek.priv";
 pub fn load_or_create_dek(state_dir: &Path) -> anyhow::Result<SealedKey> {
     if present_devices().is_empty() && !tcti_override_present() {
         return Err(anyhow!(
-            "no TPM device found (looked for {TPM_RM_DEVICE} and {TPM_RAW_DEVICE})"
+            "未找到 TPM 设备（已查找 {TPM_RM_DEVICE} 和 {TPM_RAW_DEVICE}）"
         ));
     }
 
-    ensure_private_dir(state_dir).with_context(|| {
-        format!(
-            "failed to prepare TPM state directory {}",
-            state_dir.display()
-        )
-    })?;
+    ensure_private_dir(state_dir)
+        .with_context(|| format!("无法准备 TPM 状态目录 {}", state_dir.display()))?;
 
     let pub_path = state_dir.join(PUB_FILE);
     let priv_path = state_dir.join(PRIV_FILE);
 
-    let mut context = build_context().context("failed to initialise TPM ESAPI context")?;
+    let mut context = build_context().context("无法初始化 TPM ESAPI 上下文")?;
 
     if pub_path.exists() && priv_path.exists() {
         let public = Public::unmarshall(&std::fs::read(&pub_path)?)
-            .context("failed to parse sealed TPM public blob")?;
+            .context("无法解析密封的 TPM 公共数据")?;
         let private = Private::try_from(std::fs::read(&priv_path)?)
-            .map_err(|e| anyhow!("failed to parse sealed TPM private blob: {e}"))?;
-        let dek = unseal_in(&mut context, public, private).context(
-            "could not unseal the template key; if the TPM was cleared, delete the TPM state \
-             directory and re-enrol",
-        )?;
+            .map_err(|e| anyhow!("无法解析密封的 TPM 私有数据：{e}"))?;
+        let dek = unseal_in(&mut context, public, private)
+            .context("无法解封模板密钥；如果 TPM 已被清空，请删除 TPM 状态目录并重新录入")?;
         return Ok(dek);
     }
 
     let mut dek = Zeroizing::new([0u8; KEY_LEN]);
-    getrandom::fill(&mut *dek)
-        .map_err(|e| anyhow!("failed to draw a random data-encryption key: {e}"))?;
+    getrandom::fill(&mut *dek).map_err(|e| anyhow!("无法生成随机数据加密密钥：{e}"))?;
 
-    let (public, private) =
-        seal_in(&mut context, &dek).context("failed to seal the template key")?;
+    let (public, private) = seal_in(&mut context, &dek).context("无法密封模板密钥")?;
     write_private_file(&pub_path, &public.marshall()?)?;
     write_private_file(&priv_path, private.value())?;
     Ok(dek)
@@ -88,8 +80,8 @@ fn tcti_override_present() -> bool {
 }
 
 fn device_context(device: &str) -> anyhow::Result<Context> {
-    let config = DeviceConfig::from_str(device)
-        .map_err(|e| anyhow!("invalid TPM device path {device}: {e}"))?;
+    let config =
+        DeviceConfig::from_str(device).map_err(|e| anyhow!("TPM 设备路径 {device} 无效：{e}"))?;
     Ok(Context::new(TctiNameConf::Device(config))?)
 }
 
@@ -115,8 +107,7 @@ fn build_context() -> anyhow::Result<Context> {
     }
 
     Err(anyhow!(
-        "could not open any TPM device ({}); gazed needs read/write access to the device node, \
-         which most distributions restrict to the `tss` user and group",
+        "无法打开任何 TPM 设备（{}）；gazed 需要设备节点的读写权限，大多数发行版仅允许 `tss` 用户和组访问",
         failures.join("; ")
     ))
 }
@@ -127,7 +118,7 @@ fn ensure_private_dir(path: &Path) -> std::io::Result<()> {
     let meta = std::fs::symlink_metadata(path)?;
     if meta.file_type().is_symlink() || !meta.is_dir() {
         return Err(std::io::Error::other(format!(
-            "{} is not a private directory",
+            "{} 不是私有目录",
             path.display()
         )));
     }
@@ -142,7 +133,7 @@ fn write_private_file(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     let parent: PathBuf = path
         .parent()
         .map(Path::to_path_buf)
-        .context("sealed key path has no parent directory")?;
+        .context("密封密钥路径没有父目录")?;
     let tmp = parent.join(format!(
         ".{}.{}.tmp",
         path.file_name().and_then(|n| n.to_str()).unwrap_or("dek"),
@@ -153,13 +144,13 @@ fn write_private_file(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
         .create_new(true)
         .mode(0o600)
         .open(&tmp)
-        .with_context(|| format!("failed to create {}", tmp.display()))?;
+        .with_context(|| format!("无法创建 {}", tmp.display()))?;
     if let Err(e) = file.write_all(bytes).and_then(|_| file.flush()) {
         let _ = std::fs::remove_file(&tmp);
-        return Err(e).with_context(|| format!("failed to write {}", tmp.display()));
+        return Err(e).with_context(|| format!("无法写入 {}", tmp.display()));
     }
     drop(file);
-    std::fs::rename(&tmp, path).with_context(|| format!("failed to replace {}", path.display()))?;
+    std::fs::rename(&tmp, path).with_context(|| format!("无法替换 {}", path.display()))?;
     Ok(())
 }
 
@@ -311,7 +302,7 @@ mod tests {
 
         let err = ensure_private_dir(&link).expect_err("a symlink could point anywhere");
 
-        assert!(err.to_string().contains("not a private directory"), "{err}");
+        assert!(err.to_string().contains("不是私有目录"), "{err}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -368,7 +359,7 @@ mod tests {
 
         let err = write_private_file(&path, b"sealed").expect_err("the parent does not exist");
 
-        assert!(err.to_string().contains("failed to create"), "{err}");
+        assert!(err.to_string().contains("无法创建"), "{err}");
     }
 
     #[test]
@@ -424,7 +415,7 @@ mod tests {
         let err = load_or_create_dek(&dir).expect_err("there is no TPM to seal against");
         let message = err.to_string();
 
-        assert!(message.contains("no TPM device found"), "{message}");
+        assert!(message.contains("未找到 TPM 设备"), "{message}");
         assert!(message.contains(TPM_RM_DEVICE), "{message}");
         assert!(message.contains(TPM_RAW_DEVICE), "{message}");
         assert!(

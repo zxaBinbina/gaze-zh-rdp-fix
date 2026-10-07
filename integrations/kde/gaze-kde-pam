@@ -71,31 +71,30 @@ gaze_control() {
 
 usage() {
 	cat <<'EOF'
-Usage: gaze-kde-pam enable|disable|enable-login|disable-login|status
+用法：gaze-kde-pam enable|disable|enable-login|disable-login|status
 
-enable         Run Gaze in KScreenLocker's biometric slot (kde-fingerprint, or
-               kde-smartcard when a fingerprint reader already owns the first).
-               Pass --force to undo an earlier `disable`, which upgrades respect
-disable        Remove Gaze from that slot, and keep it off across upgrades
-enable-login   Also run Gaze in the login greeter stack (plasmalogin, sddm)
-disable-login  Remove Gaze from the login greeter stack
-status         Report what is wired up
+enable         在 KScreenLocker 的生物识别认证入口运行 Gaze（kde-fingerprint；
+               如果指纹读取器已占用该入口，则使用 kde-smartcard）。
+               使用 --force 可撤销之前的 disable；升级会保留禁用状态
+disable        从该入口移除 Gaze，并在升级后保持关闭
+enable-login   同时在登录界面认证栈中运行 Gaze（plasmalogin、sddm）
+disable-login  从登录界面认证栈移除 Gaze
+status         报告当前接入状态
 
-The lock screen starts face auth on its own. The login greeter runs it when you
-submit the login form (including Enter on an empty password field), exactly as a
-fingerprint reader does there, unless the greeter ships an up-front biometric
-service of its own, in which case enable-login uses that and needs no submit.
+锁屏会自动启动人脸认证。登录界面会在提交登录表单时运行人脸认证
+（包括密码框为空时按 Enter），与指纹读取器的行为相同。
+如果登录界面自带提前启动的生物识别服务，enable-login 会使用该服务，无需提交表单。
 
-Set GAZE_KDE_PAM_FILE, GAZE_KDE_SMARTCARD_PAM_FILE, GAZE_KDE_LOGIN_PAM_FILES,
-GAZE_KDE_LOGIN_FACE_PAM_FILE, GAZE_KDE_VENDOR_PAM_DIR or GAZE_KDE_STATE_DIR to
-operate on different files (used by tests).
+设置 GAZE_KDE_PAM_FILE、GAZE_KDE_SMARTCARD_PAM_FILE、GAZE_KDE_LOGIN_PAM_FILES、
+GAZE_KDE_LOGIN_FACE_PAM_FILE、GAZE_KDE_VENDOR_PAM_DIR 或 GAZE_KDE_STATE_DIR
+可操作其他文件（用于测试）。
 EOF
 }
 
 require_root() {
 	[ -z "${GAZE_KDE_PAM_FILE:-}" ] || return 0
 	if [ "$(id -u)" -ne 0 ]; then
-		printf 'This must run as root: sudo gaze-kde-pam %s\n' "$1" >&2
+		printf '必须以 root 身份运行：sudo gaze-kde-pam %s\n' "$1" >&2
 		return 1
 	fi
 }
@@ -325,7 +324,7 @@ insert_block() {
 	target=$(real_file "$1")
 	position=$(insert_position "$target")
 	if [ "$position" -eq 0 ]; then
-		printf '%s has no auth stack to extend; not modified.\n' "$target" >&2
+		printf '%s 没有可扩展的认证栈；未修改。\n' "$target" >&2
 		return 1
 	fi
 
@@ -376,14 +375,14 @@ remove_block() {
 	# a missing END marker from a file that merely lacks a trailing newline.
 	if grep -qF "$BEGIN_MARKER" "$target" 2>/dev/null &&
 		! grep -qF "$END_MARKER" "$target" 2>/dev/null; then
-		printf '%s has no complete Gaze block (missing %s); not modified.\n' \
+		printf '%s 没有完整的 Gaze 块（缺少 %s）；未修改。\n' \
 			"$target" "$END_MARKER" >&2
 		return 1
 	fi
 
 	if ! grep -qF "$BEGIN_MARKER" "$target" 2>/dev/null; then
 		if has_gaze "$target"; then
-			printf '%s references pam_gaze outside the managed block; leaving it alone.\n' "$target"
+			printf '%s 在受管理的块之外引用了 pam_gaze；保持原样。\n' "$target"
 		fi
 		return "$NOTHING_TO_REMOVE"
 	fi
@@ -402,7 +401,7 @@ remove_block() {
 	if cmp -s "$target" "$tmp"; then
 		rm -f "$tmp"
 		trap - EXIT
-		printf '%s has no complete Gaze block (missing %s); not modified.\n' "$target" "$END_MARKER" >&2
+		printf '%s 没有完整的 Gaze 块（缺少 %s）；未修改。\n' "$target" "$END_MARKER" >&2
 		return 1
 	fi
 
@@ -447,7 +446,7 @@ ensure_local_copy() {
 	mkdir -p "$STATE_DIR" 2>/dev/null || true
 	: >"$(created_flag "$slot")" 2>/dev/null || true
 	file_sum "$(vendor_file "$slot")" >"$(vendor_sum_flag "$slot")" 2>/dev/null || true
-	printf 'Copied %s to %s so the vendor stack is not shadowed.\n' \
+	printf '已将 %s 复制到 %s，避免覆盖厂商认证栈。\n' \
 		"$(vendor_file "$slot")" "$slot"
 }
 
@@ -457,9 +456,9 @@ report_vendor_drift() {
 		[ -n "$recorded" ] || continue
 		current=$(file_sum "$(vendor_file "$slot")" 2>/dev/null) || continue
 		[ "$recorded" = "$current" ] && continue
-		printf 'warning: %s has changed since Gaze copied it to %s, which shadows it.\n' \
+		printf '警告：%s 在 Gaze 将其复制到 %s 后发生了变化，而副本会覆盖原文件。\n' \
 			"$(vendor_file "$slot")" "$slot" >&2
-		printf '         Re-run `sudo gaze-kde-pam disable && sudo gaze-kde-pam enable --force` to pick it up.\n' >&2
+		printf '         重新运行 `sudo gaze-kde-pam disable && sudo gaze-kde-pam enable --force` 以使用更新后的文件。\n' >&2
 	done
 }
 
@@ -469,14 +468,14 @@ enable() {
 	require_root enable || return 1
 
 	if [ "$force" -eq 0 ] && [ -f "$(opt_out_flag)" ]; then
-		printf 'Face unlock is switched off on the KDE lock screen (you ran `gaze-kde-pam disable`).\n'
-		printf 'Turn it back on with: sudo gaze-kde-pam enable --force\n'
+		printf 'KDE 锁屏的人脸解锁已关闭（您运行过 `gaze-kde-pam disable`）。\n'
+		printf '重新启用：sudo gaze-kde-pam enable --force\n'
 		return 0
 	fi
 	rm -f "$(opt_out_flag)"
 
 	if ! pam_module_installed; then
-		printf 'Warning: pam_gaze.so is not installed yet; install the gaze package so face unlock works.\n' >&2
+		printf '警告：尚未安装 pam_gaze.so；请安装 gaze 软件包以使用人脸解锁。\n' >&2
 	fi
 
 	slot=$(lock_slot)
@@ -486,17 +485,17 @@ enable() {
 
 	if [ ! -f "$slot" ]; then
 		create_face_service "$slot"
-		printf 'Created %s running Gaze in KScreenLocker biometric slot.\n' "$slot"
+		printf '已创建 %s，在 KScreenLocker 生物识别认证入口运行 Gaze。\n' "$slot"
 		record_installed "$slot"
 	elif has_gaze "$where"; then
-		printf 'Gaze is already referenced by %s.\n' "$where"
+		printf '%s 已引用 Gaze。\n' "$where"
 	else
 		# Ahead of pam_fprintd, which blocks on a swipe and would starve face auth.
 		insert_block "$slot" || return 1
 		record_installed "$slot"
-		printf 'Enabled Gaze face unlock on the KDE lock screen (%s).\n' "$where"
+		printf '已在 KDE 锁屏启用 Gaze 人脸解锁（%s）。\n' "$where"
 		if [ "$slot" = "$SMARTCARD_PAM_FILE" ]; then
-			printf 'Used the smartcard slot so your fingerprint reader keeps all of %s.\n' \
+			printf '已使用智能卡认证入口，以便指纹读取器继续完整使用 %s。\n' \
 				"$(effective_file "$PAM_FILE")"
 		fi
 	fi
@@ -534,23 +533,23 @@ disable() {
 			if [ "$untouched" -eq 1 ]; then
 				rm -f "$where" "$(created_flag "$slot")" \
 					"$(installed_sum_flag "$slot")" "$(vendor_sum_flag "$slot")"
-				printf 'Removed %s.\n' "$where"
+				printf '已删除 %s。\n' "$where"
 			else
 				rm -f "$(created_flag "$slot")" \
 					"$(installed_sum_flag "$slot")" "$(vendor_sum_flag "$slot")"
-				printf 'Kept %s: it has been changed since Gaze wrote it.\n' "$where"
+				printf '已保留 %s：该文件在 Gaze 写入后被修改过。\n' "$where"
 			fi
 			removed_any=1
 		elif [ "$removed" -eq 0 ]; then
 			rm -f "$(installed_sum_flag "$slot")"
-			printf 'Removed Gaze face unlock from the KDE lock screen (%s).\n' "$where"
+			printf '已从 KDE 锁屏移除 Gaze 人脸解锁（%s）。\n' "$where"
 			removed_any=1
 		fi
 	done
 
 	[ "$failed" -eq 1 ] && return 1
 	if [ "$removed_any" -eq 0 ]; then
-		printf 'Gaze face unlock was not enabled on the KDE lock screen.\n'
+		printf 'KDE 锁屏未启用 Gaze 人脸解锁。\n'
 	fi
 }
 
@@ -578,7 +577,7 @@ enable_login_face() {
 	# Ahead of pam_fprintd for the same reason as the lock screen slot.
 	if insert_block "$LOGIN_FACE_PAM_FILE"; then
 		record_installed "$LOGIN_FACE_PAM_FILE"
-		printf 'Enabled hands-free Gaze at the KDE login greeter (%s).\n' \
+		printf '已在 KDE 登录界面启用无需按键的 Gaze 认证（%s）。\n' \
 			"$(real_file "$LOGIN_FACE_PAM_FILE")"
 	fi
 }
@@ -587,7 +586,7 @@ enable_login() {
 	require_root enable-login || return 1
 
 	if ! login_targets >/dev/null && ! slot_exists "$LOGIN_FACE_PAM_FILE"; then
-		printf 'No KDE login stack found (looked for: %s, and the same names in %s).\n' \
+		printf '未找到 KDE 登录认证栈（已查找：%s，以及 %s 中的同名文件）。\n' \
 			"$LOGIN_PAM_FILES" "$VENDOR_PAM_DIR" >&2
 		return 1
 	fi
@@ -604,37 +603,35 @@ enable_login() {
 			remove_block "$service" || exit 1
 		fi
 		if has_gaze "$effective"; then
-			printf 'Gaze is already referenced by %s.\n' "$effective"
+			printf '%s 已引用 Gaze。\n' "$effective"
 			continue
 		fi
 		where=$(real_file "$service")
 		if insert_block "$service"; then
 			record_installed "$service"
-			printf 'Enabled Gaze at the KDE login greeter (%s).\n' "$where"
+			printf '已在 KDE 登录界面启用 Gaze（%s）。\n' "$where"
 		fi
 	done
 
 	if slot_exists "$LOGIN_FACE_PAM_FILE"; then
 		cat <<'EOF'
 
-Face auth runs as soon as the greeter shows your user, with no key press. It only
-does that for a preselected user, since PAM needs a name before it can verify
-anyone; on a greeter that asks you to type your username, submit the form first.
+人脸认证会在登录界面显示您的用户时启动，无需按键。此行为仅适用于预选用户，
+因为 PAM 需要用户名才能验证身份；如果登录界面要求输入用户名，请先提交表单。
 EOF
 	else
 		cat <<'EOF'
 
-This greeter has no up-front biometric service, so face auth starts when you
-submit the login form: press Enter with the password field empty, exactly as you
-would for a fingerprint reader on the same screen.
+此登录界面没有提前启动的生物识别服务，人脸认证会在提交登录表单时开始：
+让密码框保持为空并按 Enter，与在同一界面使用指纹读取器的操作相同。
 EOF
 	fi
 
 	cat <<'EOF'
 
-For optional TPM-backed KWallet unlock, enable KWallet unlock in `gaze config`
-and enroll with `gaze keyring --kwallet`. Install your distro's kwallet-pam package.
-Without enrollment, KWallet stays locked until you unlock it in the session.
+如需使用 TPM 保护的 KWallet 解锁，请在 `gaze config` 中启用 KWallet 解锁，
+并使用 `gaze keyring --kwallet` 录入。请安装发行版提供的 kwallet-pam 软件包。
+未录入时，KWallet 将保持锁定，直到您在会话中手动解锁。
 EOF
 }
 
@@ -657,15 +654,15 @@ disable_login() {
 			if [ "$untouched" -eq 1 ]; then
 				rm -f "$where" "$(created_flag "$service")" \
 					"$(installed_sum_flag "$service")" "$(vendor_sum_flag "$service")"
-				printf 'Removed %s.\n' "$where"
+				printf '已删除 %s。\n' "$where"
 			else
 				rm -f "$(created_flag "$service")" \
 					"$(installed_sum_flag "$service")" "$(vendor_sum_flag "$service")"
-				printf 'Kept %s: it has been changed since Gaze wrote it.\n' "$where"
+				printf '已保留 %s：该文件在 Gaze 写入后被修改过。\n' "$where"
 			fi
 		elif [ "$removed" -eq 0 ]; then
 			rm -f "$(installed_sum_flag "$service")"
-			printf 'Removed Gaze from the KDE login greeter (%s).\n' "$where"
+			printf '已从 KDE 登录界面移除 Gaze（%s）。\n' "$where"
 		fi
 	done
 }
@@ -675,24 +672,24 @@ status() {
 	if wired=$(wired_lock_slot); then
 		slot=$(effective_file "$wired")
 		if grep -qF "$BEGIN_MARKER" "$slot" 2>/dev/null; then
-			printf 'lock screen: enabled (%s contains the Gaze block)\n' "$slot"
+			printf '锁屏：已启用（%s 包含 Gaze 块）\n' "$slot"
 		else
-			printf 'lock screen: enabled (%s references pam_gaze outside the managed block)\n' "$slot"
+			printf '锁屏：已启用（%s 在受管理的块之外引用了 pam_gaze）\n' "$slot"
 		fi
 		rc=0
 	elif ! slot_exists "$PAM_FILE" && ! slot_exists "$SMARTCARD_PAM_FILE"; then
-		printf 'lock screen: not configured (no biometric slot exists to wire)\n'
+		printf '锁屏：未配置（不存在可接入的生物识别认证入口）\n'
 	else
-		printf 'lock screen: disabled (%s does not reference pam_gaze)\n' \
+		printf '锁屏：已禁用（%s 未引用 pam_gaze）\n' \
 			"$(effective_file "$(preferred_lock_slot)")"
 	fi
 
 	if slot_exists "$LOGIN_FACE_PAM_FILE"; then
 		if has_gaze "$(effective_file "$LOGIN_FACE_PAM_FILE")"; then
-			printf 'login greeter: enabled hands-free (%s)\n' \
+			printf '登录界面：已启用，无需按键（%s）\n' \
 				"$(effective_file "$LOGIN_FACE_PAM_FILE")"
 		else
-			printf 'login greeter: disabled (%s does not reference pam_gaze)\n' \
+			printf '登录界面：已禁用（%s 未引用 pam_gaze）\n' \
 				"$(effective_file "$LOGIN_FACE_PAM_FILE")"
 		fi
 	fi
@@ -703,11 +700,11 @@ status() {
 		slot_exists "$service" || continue
 		effective=$(effective_file "$service")
 		if has_gaze "$effective"; then
-			printf 'login greeter: enabled on submit (%s)\n' "$effective"
+			printf '登录界面：已启用，提交时启动（%s）\n' "$effective"
 		elif stack_reaches_gaze "$effective"; then
-			printf 'login greeter: enabled on submit (%s, through an included stack)\n' "$effective"
+			printf '登录界面：已启用，提交时启动（%s，通过包含的认证栈）\n' "$effective"
 		else
-			printf 'login greeter: disabled (%s)\n' "$effective"
+			printf '登录界面：已禁用（%s）\n' "$effective"
 		fi
 	done
 

@@ -7,19 +7,18 @@ mod polkit;
 mod selinux;
 mod tui;
 
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use clap_complete::CompleteEnv;
 use clap_complete::engine::{ArgValueCompleter, CompletionCandidate};
 use console::{Term, style};
 use dialoguer::{Confirm, Input, Select, theme::ColorfulTheme};
 use futures::StreamExt;
 use gaze_core::config::{
-    AuthConfig, Config, DEFAULT_SECURITY_THRESHOLD, HYBRID_POLICY_OPTIONS,
-    INFERENCE_DEVICE_OPTIONS, INFERENCE_EXECUTION_PROVIDER_OPTIONS, MAX_ENROLLMENT_FACE_SIZE_RATIO,
-    MAX_LIVENESS_MAX_SECONDS, MAX_LIVENESS_THRESHOLD, MAX_SECURITY_THRESHOLD,
-    MIN_ENROLLMENT_FACE_SIZE_RATIO, MIN_LIVENESS_MAX_SECONDS, MIN_LIVENESS_THRESHOLD,
-    MIN_SECURITY_THRESHOLD, MODEL_QUALITY_OPTIONS, SECURITY_LEVEL_OPTIONS,
-    START_DELAY_SCOPE_LABELS, SecurityLevel,
+    AuthConfig, Config, DEFAULT_SECURITY_THRESHOLD, HYBRID_POLICY_LABELS,
+     MAX_ENROLLMENT_FACE_SIZE_RATIO, MAX_LIVENESS_MAX_SECONDS,
+    MAX_LIVENESS_THRESHOLD, MAX_SECURITY_THRESHOLD, MIN_ENROLLMENT_FACE_SIZE_RATIO,
+    MIN_LIVENESS_MAX_SECONDS, MIN_LIVENESS_THRESHOLD, MIN_SECURITY_THRESHOLD, MODEL_QUALITY_LABELS,
+    SECURITY_LEVEL_LABELS, START_DELAY_SCOPE_LABELS, SecurityLevel,
 };
 use gaze_core::dbus::{
     CaptureStatus, EnrollPrompt, GazeProxy, VerifyResult, apply_config_to_daemon,
@@ -110,10 +109,10 @@ const ESCALATION_PRESERVED_ENV: [&str; 1] = ["XDG_RUNTIME_DIR"];
 
 fn reexec_as_root(name: &str) -> anyhow::Result<()> {
     if std::env::var_os(ESCALATION_MARKER).is_some() {
-        anyhow::bail!("gaze {name} re-ran itself but did not gain root privileges");
+        anyhow::bail!("gaze {name} 已重新运行，但未获得 root 权限");
     }
     if !which("sudo") {
-        anyhow::bail!("gaze {name} needs root privileges, but sudo was not found");
+        anyhow::bail!("gaze {name} 需要 root 权限，但未找到 sudo");
     }
 
     let mut cmd = std::process::Command::new("sudo");
@@ -173,7 +172,7 @@ where
         })?;
         if let Some(TuiAction::Cancel) = tui::poll_action()? {
             drop(terminal);
-            anyhow::bail!("cancelled");
+            anyhow::bail!("已取消");
         }
 
         tokio::select! {
@@ -189,7 +188,7 @@ where
 }
 
 #[derive(Parser)]
-#[command(name = "gaze", version, about = "CLI for Gaze")]
+#[command(name = "gaze", version, about = "Gaze 命令行界面")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -197,107 +196,169 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Authenticate a user with face recognition
+    /// 使用人脸识别认证用户
     Auth {
         #[arg(short, long)]
         user: Option<String>,
-        #[arg(
-            short,
-            long,
-            conflicts_with = "silent",
-            help = "Show detailed authentication metrics"
-        )]
+        #[arg(short, long, conflicts_with = "silent", help = "显示详细的认证指标")]
         verbose: bool,
-        #[arg(
-            short,
-            long,
-            help = "Suppress the terminal UI and all output; report the result via exit code"
-        )]
+        #[arg(short, long, help = "隐藏终端界面和所有输出；通过退出码报告结果")]
         silent: bool,
     },
-    /// Enroll a face profile with guided, multi-angle capture
+    /// 按照引导从多个角度采集并录入人脸档案
     AddFace {
         #[arg(short, long)]
         user: Option<String>,
-        #[arg(help = "The name of the face to enroll")]
+        #[arg(help = "要录入的人脸名称")]
         face: String,
     },
-    /// Add captures to improve recognition of an existing face profile
+    /// 增加采集数据，改善现有人脸档案的识别效果
     RefineFace {
         #[arg(short, long)]
         user: Option<String>,
-        #[arg(help = "The name of the face to refine", add = ArgValueCompleter::new(face_completer))]
+        #[arg(help = "要优化的人脸名称", add = ArgValueCompleter::new(face_completer))]
         face: String,
     },
-    /// List the face profiles enrolled for a user
+    /// 列出用户已录入的人脸档案
     ListFaces {
         #[arg(short, long)]
         user: Option<String>,
     },
-    /// Remove a face profile for a user
+    /// 删除用户的人脸档案
     RemoveFace {
         #[arg(short, long)]
         user: Option<String>,
-        #[arg(help = "The name of the face to remove", add = ArgValueCompleter::new(face_completer))]
+        #[arg(help = "要删除的人脸名称", add = ArgValueCompleter::new(face_completer))]
         face: String,
     },
-    /// Rename a face profile
+    /// 重命名人脸档案
     RenameFace {
         #[arg(short, long)]
         user: Option<String>,
-        #[arg(help = "Current face name", add = ArgValueCompleter::new(face_completer))]
+        #[arg(help = "当前人脸名称", add = ArgValueCompleter::new(face_completer))]
         from: String,
-        #[arg(help = "New face name")]
+        #[arg(help = "新人脸名称")]
         to: String,
     },
-    /// Remove all Gaze data for a user
+    /// 删除用户的所有 Gaze 数据
     ClearUser {
         #[arg(short, long)]
         user: Option<String>,
     },
-    /// Show or clear the face authentication lockout set by a duress signal
+    /// 显示或清除胁迫信号触发的人脸认证锁定
     Duress {
-        #[arg(long, help = "Re-enable face authentication after a duress lockout")]
+        #[arg(long, help = "解除胁迫锁定，重新启用人脸认证")]
         clear: bool,
         #[arg(short, long)]
         user: Option<String>,
     },
-    /// Configure daemon and GDM settings interactively
+    /// 交互式配置守护进程和 GDM 设置
     Config {
-        #[arg(long, help = "Print current values and exit")]
+        #[arg(long, help = "显示当前值并退出")]
         show: bool,
     },
-    /// Enroll or replace a TPM-protected GNOME Keyring or KWallet credential (root only)
+    /// 录入或替换受 TPM 保护的 GNOME 钥匙环或 KWallet 凭据（仅限 root）
     Keyring {
-        /// Use KDE KWallet for the credential instead of GNOME Keyring
+        /// 使用 KDE KWallet 存储凭据，而非 GNOME 钥匙环
         #[arg(long)]
         kwallet: bool,
-        /// Remove the stored credential instead of enrolling one
+        /// 删除已存储的凭据，而非录入凭据
         #[arg(long)]
         forget: bool,
-        #[arg(short, long, help = "Act on this user instead of the current one")]
+        #[arg(short, long, help = "操作此用户，而非当前用户")]
         user: Option<String>,
     },
-    /// Check the Gaze installation for configuration and runtime issues
+    /// 检查 Gaze 安装中的配置和运行问题
     Doctor {
-        #[arg(short, long, help = "Check enrollments for this user")]
+        #[arg(short, long, help = "检查此用户的录入信息")]
         user: Option<String>,
-        #[arg(
-            short,
-            long,
-            help = "Benchmark detector, recognizer, and liveness model inference speed"
-        )]
+        #[arg(short, long, help = "测试检测器、识别器和活体模型的推理速度")]
         benchmark: bool,
     },
-    /// Remove Gaze packages, PAM integration, configuration, models, and user data
+    /// 删除 Gaze 软件包、PAM 集成、配置、模型和用户数据
     Uninstall {
-        #[arg(short = 'y', long, help = "Skip the confirmation prompt")]
+        #[arg(short = 'y', long, help = "跳过确认提示")]
         yes: bool,
-        #[arg(long, help = "Preserve /var/lib/gaze (enrolled face data)")]
+        #[arg(long, help = "保留 /var/lib/gaze（已录入的人脸数据）")]
         keep_data: bool,
-        #[arg(long, help = "Print the planned commands without executing them")]
+        #[arg(long, help = "显示计划执行的命令，但不执行")]
         dry_run: bool,
     },
+}
+
+fn localized_command(command: clap::Command) -> clap::Command {
+    let has_version = command.get_version().is_some();
+    let mut command = command
+        .disable_help_subcommand(true)
+        .disable_help_flag(true)
+        .disable_version_flag(true)
+        .help_template("{about-with-newline}\n用法：{usage}\n\n{all-args}")
+        .subcommand_help_heading("命令")
+        .arg(
+            clap::Arg::new("help")
+                .short('h')
+                .long("help")
+                .action(clap::ArgAction::Help)
+                .help("显示帮助"),
+        );
+    if has_version {
+        command = command.arg(
+            clap::Arg::new("version")
+                .short('V')
+                .long("version")
+                .action(clap::ArgAction::Version)
+                .help("显示版本"),
+        );
+    }
+    command
+        .mut_args(|arg| {
+            let positional = arg.is_positional();
+            arg.help_heading(if positional { "参数" } else { "选项" })
+        })
+        .mut_subcommands(localized_command)
+}
+
+fn parse_cli() -> Cli {
+    let matches = localized_command(Cli::command())
+        .try_get_matches()
+        .unwrap_or_else(|error| {
+            let mut message = error.to_string();
+            for (english, chinese) in [
+                ("error:", "错误："),
+                ("Usage:", "用法："),
+                (
+                    "For more information, try '--help'.",
+                    "如需更多信息，请使用 '--help'。",
+                ),
+                (
+                    "the following required arguments were not provided:",
+                    "未提供以下必需参数：",
+                ),
+                ("unexpected argument", "意外的参数"),
+                ("found", "不受支持"),
+                ("unrecognized subcommand", "无法识别的子命令"),
+                ("cannot be used with", "不能与以下参数同时使用："),
+                ("the argument", "参数"),
+                ("a value is required for", "此参数需要一个值："),
+                ("but none was supplied", "但未提供任何值"),
+                ("tip:", "提示："),
+                ("a similar subcommand exists:", "存在相似的子命令："),
+                ("a similar argument exists:", "存在相似的参数："),
+                ("to pass", "若要将"),
+                ("as a value, use", "作为值传入，请使用"),
+                ("[OPTIONS]", "[选项]"),
+                ("<COMMAND>", "<命令>"),
+            ] {
+                message = message.replace(english, chinese);
+            }
+            if error.use_stderr() {
+                eprint!("{message}");
+            } else {
+                print!("{message}");
+            }
+            std::process::exit(error.exit_code());
+        });
+    Cli::from_arg_matches(&matches).expect("已验证的命令行参数")
 }
 
 fn ensure_configured_source_listed(options: &mut Vec<(String, String)>, configured: &str) {
@@ -305,7 +366,7 @@ fn ensure_configured_source_listed(options: &mut Vec<(String, String)>, configur
     if configured.is_empty() || gaze_vision::camera::is_listed_source(options, configured) {
         return;
     }
-    options.push((format!("{configured} (configured)"), configured.to_string()));
+    options.push((format!("{configured}（已配置）"), configured.to_string()));
 }
 
 fn prompt_security_threshold(
@@ -315,7 +376,7 @@ fn prompt_security_threshold(
 ) -> anyhow::Result<f64> {
     let value = Input::<String>::with_theme(theme)
         .with_prompt(format!(
-            "Custom {spectrum} threshold ({MIN_SECURITY_THRESHOLD} - {MAX_SECURITY_THRESHOLD})"
+            "自定义 {spectrum} 阈值（{MIN_SECURITY_THRESHOLD}–{MAX_SECURITY_THRESHOLD}）"
         ))
         .default(default.to_string())
         .validate_with(|input: &String| match input.trim().parse::<f64>() {
@@ -326,9 +387,9 @@ fn prompt_security_threshold(
                 Ok(())
             }
             Ok(_) => Err(format!(
-                "must be between {MIN_SECURITY_THRESHOLD} and {MAX_SECURITY_THRESHOLD}"
+                "必须介于 {MIN_SECURITY_THRESHOLD} 和 {MAX_SECURITY_THRESHOLD} 之间"
             )),
-            Err(_) => Err("must be a number".to_string()),
+            Err(_) => Err("必须是数字".to_string()),
         })
         .interact_text()?
         .trim()
@@ -345,14 +406,11 @@ async fn run_config_wizard(
 ) -> anyhow::Result<()> {
     let theme = ColorfulTheme::default();
 
-    term.write_line(&format!(
-        "\n{}\n",
-        style("Gaze Config Wizard").cyan().bold()
-    ))?;
+    term.write_line(&format!("\n{}\n", style("Gaze 配置向导").cyan().bold()))?;
 
     let selected = Select::with_theme(&theme)
-        .with_prompt("Security level")
-        .items(SECURITY_LEVEL_OPTIONS)
+        .with_prompt("安全级别")
+        .items(SECURITY_LEVEL_LABELS)
         .default(config.security.level_index() as usize)
         .interact()?;
 
@@ -362,15 +420,15 @@ async fn run_config_wizard(
         let seed = config.security.custom_form();
 
         let selected_det_idx = Select::with_theme(&theme)
-            .with_prompt("Custom detector level")
-            .items(MODEL_QUALITY_OPTIONS)
+            .with_prompt("自定义检测器级别")
+            .items(MODEL_QUALITY_LABELS)
             .default(SecurityLevel::model_quality_index(&seed.detector) as usize)
             .interact()?;
         let detector = SecurityLevel::model_quality_from_index(selected_det_idx).to_string();
 
         let selected_rec_idx = Select::with_theme(&theme)
-            .with_prompt("Custom recognizer level")
-            .items(MODEL_QUALITY_OPTIONS)
+            .with_prompt("自定义识别器级别")
+            .items(MODEL_QUALITY_LABELS)
             .default(SecurityLevel::model_quality_index(&seed.recognizer) as usize)
             .interact()?;
         let recognizer = SecurityLevel::model_quality_from_index(selected_rec_idx).to_string();
@@ -379,8 +437,8 @@ async fn run_config_wizard(
         let ir_threshold = prompt_security_threshold(&theme, "IR", seed.ir_threshold)?;
 
         let selected_hybrid_idx = Select::with_theme(&theme)
-            .with_prompt("Custom hybrid combining policy")
-            .items(HYBRID_POLICY_OPTIONS)
+            .with_prompt("自定义混合判定策略")
+            .items(HYBRID_POLICY_LABELS)
             .default(SecurityLevel::hybrid_policy_index_for_value(&seed.hybrid_policy) as usize)
             .interact()?;
         let hybrid_policy = SecurityLevel::hybrid_policy_from_index(selected_hybrid_idx);
@@ -396,8 +454,8 @@ async fn run_config_wizard(
 
     if config.inference.is_representable() {
         let selected_execution_provider = Select::with_theme(&theme)
-            .with_prompt("Inference execution provider")
-            .items(INFERENCE_EXECUTION_PROVIDER_OPTIONS)
+            .with_prompt("推理执行后端")
+            .items(gaze_core::config::INFERENCE_EXECUTION_PROVIDER_LABELS)
             .default(config.inference.execution_provider_index() as usize)
             .interact()?;
         config.inference.execution_provider =
@@ -408,8 +466,8 @@ async fn run_config_wizard(
 
         if config.inference.execution_provider == "openvino" {
             let selected_device = Select::with_theme(&theme)
-                .with_prompt("OpenVINO inference device")
-                .items(INFERENCE_DEVICE_OPTIONS)
+                .with_prompt("OpenVINO 推理设备")
+                .items(gaze_core::config::INFERENCE_DEVICE_LABELS)
                 .default(config.inference.device_index() as usize)
                 .interact()?;
             config.inference.device =
@@ -427,7 +485,7 @@ async fn run_config_wizard(
         }
     } else {
         term.write_line(&format!(
-            "{} Keeping inference {}/{}: this build cannot change it",
+            "{} 保留推理配置 {}/{}：此版本无法修改该配置",
             style("!").yellow().bold(),
             config.inference.execution_provider,
             config.inference.device
@@ -436,14 +494,14 @@ async fn run_config_wizard(
 
     let mut cameras = gaze_vision::camera::enumerate_cameras().unwrap_or_default();
     if cameras.is_empty() {
-        anyhow::bail!("No PipeWire cameras detected! Please ensure your video inputs are active.");
+        anyhow::bail!("未检测到 PipeWire 摄像头！请确认视频输入设备已启用。");
     }
     ensure_configured_source_listed(&mut cameras, &config.cameras.rgb);
     let cam_names: Vec<String> = cameras.iter().map(|(n, _)| n.clone()).collect();
     let default_cam_idx = gaze_vision::camera::source_index(&cameras, &config.cameras.rgb);
 
     let selected_cam_idx = Select::with_theme(&theme)
-        .with_prompt("RGB camera source")
+        .with_prompt("RGB 摄像头来源")
         .items(&cam_names)
         .default(default_cam_idx)
         .interact()?;
@@ -451,7 +509,7 @@ async fn run_config_wizard(
     config.cameras.rgb = cameras[selected_cam_idx].1.clone();
 
     config.cameras.dark_luma_threshold = Input::<u8>::with_theme(&theme)
-        .with_prompt("Darkness cutoff: reject frames below this mean brightness (0-255)")
+        .with_prompt("暗光阈值：拒绝平均亮度低于此值的帧（0–255）")
         .default(config.cameras.dark_luma_threshold)
         .interact_text()?;
 
@@ -462,7 +520,7 @@ async fn run_config_wizard(
     let default_ir_idx = gaze_vision::camera::source_index(&ir_options, &config.cameras.ir);
 
     let selected_ir_idx = Select::with_theme(&theme)
-        .with_prompt("IR camera source")
+        .with_prompt("红外摄像头来源")
         .items(&ir_names)
         .default(default_ir_idx)
         .interact()?;
@@ -474,12 +532,12 @@ async fn run_config_wizard(
         config.cameras.parallel_capture = "never".to_string();
     } else {
         config.cameras.emitter_enabled = Confirm::with_theme(&theme)
-            .with_prompt("Force IR emitter override (only use if emitter stays off automatically)")
+            .with_prompt("强制开启红外发射器（仅在发射器无法自动开启时使用）")
             .default(config.cameras.emitter_enabled)
             .interact()?;
 
         let capture_idx = Select::with_theme(&theme)
-            .with_prompt("Capture RGB and IR at the same time (faster, but some webcams cannot)")
+            .with_prompt("同时采集 RGB 和红外画面（速度更快，但部分摄像头不支持）")
             .items(gaze_core::config::PARALLEL_CAPTURE_LABELS.as_slice())
             .default(config.cameras.parallel_capture_index() as usize)
             .interact()?;
@@ -488,47 +546,43 @@ async fn run_config_wizard(
     }
 
     config.auth.abort_if_ssh = Confirm::with_theme(&theme)
-        .with_prompt("Abort face auth for SSH sessions")
+        .with_prompt("SSH 会话中中止人脸认证")
         .default(config.auth.abort_if_ssh)
         .interact()?;
 
     config.auth.abort_if_lid_closed = Confirm::with_theme(&theme)
-        .with_prompt("Abort face auth when laptop lid is closed")
+        .with_prompt("笔记本合盖时中止人脸认证")
         .default(config.auth.abort_if_lid_closed)
         .interact()?;
 
     config.auth.abort_before_first_resume = Confirm::with_theme(&theme)
-        .with_prompt("Abort face auth until the system has suspended and resumed once")
+        .with_prompt("系统完成一次挂起并恢复前中止人脸认证")
         .default(config.auth.abort_before_first_resume)
         .interact()?;
 
     config.auth.require_confirmation_lock_screen = Confirm::with_theme(&theme)
-        .with_prompt(
-            "Require confirmation (press Enter/Authenticate/OK) on the lock screen after face matches",
-        )
+        .with_prompt("锁屏界面匹配到人脸后需要确认（按 Enter 或点击认证/确定）")
         .default(config.auth.require_confirmation_lock_screen)
         .interact()?;
 
     config.auth.require_confirmation_elevation = Confirm::with_theme(&theme)
-        .with_prompt(
-            "Require confirmation (press Enter/Authenticate/OK) for elevated auth (sudo, polkit, etc.) after face matches",
-        )
+        .with_prompt("提权认证（sudo、polkit 等）匹配到人脸后需要确认（按 Enter 或点击认证/确定）")
         .default(config.auth.require_confirmation_elevation)
         .interact()?;
 
     config.auth.resume_grace_ms = Input::with_theme(&theme)
-        .with_prompt("Resume grace period in milliseconds (delay auth after suspend)")
+        .with_prompt("唤醒宽限时间，单位为毫秒（挂起恢复后延迟认证）")
         .default(config.auth.resume_grace_ms)
         .interact_text()?;
 
     config.auth.start_delay_ms = Input::with_theme(&theme)
-        .with_prompt("Start delay in milliseconds (0 disables)")
+        .with_prompt("启动延迟，单位为毫秒（0 表示禁用）")
         .default(config.auth.start_delay_ms)
         .interact_text()?;
 
     if config.auth.start_delay_ms > 0 {
         let scope_index = Select::with_theme(&theme)
-            .with_prompt("Apply the start delay to")
+            .with_prompt("启动延迟适用范围")
             .items(START_DELAY_SCOPE_LABELS)
             .default(
                 AuthConfig::start_delay_scope_index_for_value(config.auth.start_delay_scope())
@@ -539,12 +593,12 @@ async fn run_config_wizard(
     }
 
     config.enrollment.max_templates = Input::with_theme(&theme)
-        .with_prompt("Max templates (sets of captures)")
+        .with_prompt("模板数量上限（采集组数）")
         .default(config.enrollment.max_templates)
         .interact_text()?;
 
     let min_face_size_ratio: f64 = Input::with_theme(&theme)
-        .with_prompt("Minimum enrollment face size ratio (0.10 - 0.75; lower allows more distance)")
+        .with_prompt("录入时的最小人脸尺寸比例（0.10–0.75；降低此值可增加距离）")
         .default(config.enrollment.min_face_size_ratio)
         .interact_text()?;
     config.enrollment.min_face_size_ratio = if min_face_size_ratio.is_finite() {
@@ -557,13 +611,13 @@ async fn run_config_wizard(
     };
 
     config.liveness.enabled = Confirm::with_theme(&theme)
-        .with_prompt("Enable liveness anti-spoofing")
+        .with_prompt("启用活体防伪检测")
         .default(config.liveness.enabled)
         .interact()?;
     if config.liveness.enabled {
         config.liveness.threshold = Input::<String>::with_theme(&theme)
             .with_prompt(format!(
-                "Liveness threshold ({} - {})",
+                "活体检测阈值（{}–{}）",
                 MIN_LIVENESS_THRESHOLD, MAX_LIVENESS_THRESHOLD
             ))
             .default(config.liveness.threshold.to_string())
@@ -575,9 +629,9 @@ async fn run_config_wizard(
                     Ok(())
                 }
                 Ok(_) => Err(format!(
-                    "must be between {MIN_LIVENESS_THRESHOLD} and {MAX_LIVENESS_THRESHOLD}"
+                    "必须介于 {MIN_LIVENESS_THRESHOLD} 和 {MAX_LIVENESS_THRESHOLD} 之间"
                 )),
-                Err(_) => Err("must be a number".to_string()),
+                Err(_) => Err("必须是数字".to_string()),
             })
             .interact_text()?
             .trim()
@@ -585,7 +639,7 @@ async fn run_config_wizard(
             .unwrap_or(0.8);
         config.liveness.max_seconds = Input::with_theme(&theme)
             .with_prompt(format!(
-                "Liveness max seconds ({MIN_LIVENESS_MAX_SECONDS}..={MAX_LIVENESS_MAX_SECONDS})"
+                "最长活体检测秒数（{MIN_LIVENESS_MAX_SECONDS}..={MAX_LIVENESS_MAX_SECONDS}）"
             ))
             .default(config.liveness.max_seconds)
             .validate_with(|value: &f64| {
@@ -593,7 +647,7 @@ async fn run_config_wizard(
                     Ok(())
                 } else {
                     Err(format!(
-                        "must be between {MIN_LIVENESS_MAX_SECONDS} and {MAX_LIVENESS_MAX_SECONDS}"
+                        "必须介于 {MIN_LIVENESS_MAX_SECONDS} 和 {MAX_LIVENESS_MAX_SECONDS} 之间"
                     ))
                 }
             })
@@ -601,14 +655,14 @@ async fn run_config_wizard(
     }
 
     config.storage.encrypt_templates = Confirm::with_theme(&theme)
-        .with_prompt("Encrypt face templates at rest using TPM 2.0")
+        .with_prompt("使用 TPM 2.0 加密存储的人脸模板")
         .default(config.storage.encrypt_templates)
         .interact()?;
 
     config.storage.unlock_gnome_keyring =
         if keyring_supported.gnome && config.storage.encrypt_templates && config.liveness.enabled {
             Confirm::with_theme(&theme)
-                .with_prompt("Enable TPM-backed GNOME Keyring unlock for GDM or greetd face logins")
+                .with_prompt("为 GDM 或 greetd 人脸登录启用 TPM 保护的 GNOME 钥匙环解锁")
                 .default(config.storage.unlock_gnome_keyring)
                 .interact()?
         } else {
@@ -619,7 +673,7 @@ async fn run_config_wizard(
         if keyring_supported.kwallet && config.storage.encrypt_templates && config.liveness.enabled
         {
             Confirm::with_theme(&theme)
-                .with_prompt("Enable TPM-backed KWallet unlock for KDE face logins")
+                .with_prompt("为 KDE 人脸登录启用 TPM 保护的 KWallet 解锁")
                 .default(config.storage.unlock_kwallet)
                 .interact()?
         } else {
@@ -631,15 +685,12 @@ async fn run_config_wizard(
     } else {
         apply_config_to_daemon(proxy, &config).await
     };
-    saved.map_err(|e| anyhow::anyhow!("Failed to save configuration: {e}"))?;
-    term.write_line(&format!(
-        "{} Configuration saved and applied.",
-        style("✓").green().bold()
-    ))?;
+    saved.map_err(|e| anyhow::anyhow!("无法保存配置：{e}"))?;
+    term.write_line(&format!("{} 配置已保存并应用。", style("✓").green().bold()))?;
 
     if config.storage.unlock_gnome_keyring
         && Confirm::with_theme(&theme)
-            .with_prompt("Enroll the login keyring password now")
+            .with_prompt("现在录入登录钥匙环密码")
             .default(false)
             .interact()?
     {
@@ -652,7 +703,7 @@ async fn run_config_wizard(
 
     if config.storage.unlock_kwallet
         && Confirm::with_theme(&theme)
-            .with_prompt("Enroll the KWallet password now")
+            .with_prompt("现在录入 KWallet 密码")
             .default(false)
             .interact()?
     {
@@ -676,7 +727,7 @@ async fn handle_enroll(
 
     if let Err(err) = proxy.claim(user).await {
         term.write_line(&format!(
-            "{} Failed to claim device: {}",
+            "{} 无法取得设备使用权：{}",
             style("✗").red().bold(),
             dbus_error_message(&err)
         ))?;
@@ -695,11 +746,11 @@ async fn handle_enroll(
     if let Err(err) = proxy.enroll_start(face).await {
         drop(terminal);
         let _ = proxy.release().await;
-        anyhow::bail!("Failed to start enrollment: {}", dbus_error_message(&err));
+        anyhow::bail!("无法开始录入：{}", dbus_error_message(&err));
     }
 
-    let mut current_enroll_msg = "Waiting for capture prompt".to_string();
-    let mut current_capture_msg = "Waiting for face...".to_string();
+    let mut current_enroll_msg = "正在等待采集提示".to_string();
+    let mut current_capture_msg = "正在等待人脸...".to_string();
     let mut current_capture_tone = Tone::Info;
     let mut current_progress = 0_u32;
     let mut current_max = 100_u32;
@@ -787,22 +838,19 @@ async fn handle_enroll(
     }
     let _ = proxy.release().await;
     if is_cancelled {
-        term.write_line(&format!(
-            "\n{} Enrollment cancelled",
-            style("✗").red().bold()
-        ))?;
+        term.write_line(&format!("\n{} 录入已取消", style("✗").red().bold()))?;
         std::process::exit(130);
     }
     if is_completed {
         term.write_line(&format!(
-            "  {} Captures saved for {}/{}!\n",
+            "  {} 已保存 {}/{} 的采集数据！\n",
             style("✓").green().bold(),
             style(user).green(),
             style(face).green()
         ))?;
     } else if is_failed {
         term.write_line(&format!(
-            "{} Enrollment failed: {}",
+            "{} 录入失败：{}",
             style("✗").red().bold(),
             current_enroll_msg
         ))?;
@@ -827,7 +875,7 @@ async fn handle_auth(
     if !has_faces {
         if !silent {
             term.write_line(&format!(
-                "{} No faces enrolled for {}. Run {} to enroll a face.",
+                "{} 尚未为 {} 录入人脸。请运行 {} 录入人脸。",
                 style("i").cyan().bold(),
                 style(user).bold(),
                 style("gaze add-face <name>").bold()
@@ -841,7 +889,7 @@ async fn handle_auth(
     if let Err(err) = proxy.claim(user).await {
         if !silent {
             term.write_line(&format!(
-                "{} Failed to claim device: {}",
+                "{} 无法取得设备使用权：{}",
                 style("✗").red().bold(),
                 dbus_error_message(&err)
             ))?;
@@ -867,13 +915,13 @@ async fn handle_auth(
     if let Err(e) = proxy.verify_start("any").await {
         drop(terminal);
         if !silent {
-            term.write_line(&format!("{} Daemon error: {}", style("✗").red().bold(), e))?;
+            term.write_line(&format!("{} 守护进程错误：{}", style("✗").red().bold(), e))?;
         }
         let _ = proxy.release().await;
         std::process::exit(1);
     }
 
-    let mut status_msg = format!("Scanning face for {user}...");
+    let mut status_msg = format!("正在扫描 {user} 的人脸...");
     let mut status_tone = Tone::Info;
     let mut tick = 0_u64;
     let mut cancelled = false;
@@ -912,7 +960,7 @@ async fn handle_auth(
                     let status = *args.status();
                     status_tone = capture_tone(status);
                     status_msg = match status {
-                        CaptureStatus::Ready | CaptureStatus::Usable => format!("Scanning face for {user}..."),
+                        CaptureStatus::Ready | CaptureStatus::Usable => format!("正在扫描 {user} 的人脸..."),
                         _ => status.to_string(),
                     };
                 }
@@ -957,7 +1005,7 @@ async fn handle_auth(
         let _ = proxy.release().await;
         if !silent {
             term.write_line(&format!(
-                "{} Timed out waiting for the daemon to decide ({}ms)",
+                "{} 等待守护进程判定超时（{}毫秒）",
                 style("✗").red().bold(),
                 start.elapsed().as_millis()
             ))?;
@@ -976,13 +1024,13 @@ async fn handle_auth(
             }
             println!(
                 "\n{:<20} {:>10} {:>8} {:>8} {:>10} {:>8} {:>8}",
-                style("Face").bold(),
-                style("RGB Sim").bold(),
+                style("人脸").bold(),
+                style("RGB 相似度").bold(),
                 style("RGB %").bold(),
-                style("RGB Pass").bold(),
-                style("IR Sim").bold(),
-                style("IR %").bold(),
-                style("IR Pass").bold()
+                style("RGB 通过").bold(),
+                style("红外相似度").bold(),
+                style("红外 %").bold(),
+                style("红外通过").bold()
             );
             println!("{}", style("-".repeat(78)).dim());
             for (name, rgb_sim, rgb_pct, rgb_passed, ir_sim, ir_pct, ir_passed) in &faces {
@@ -1010,8 +1058,8 @@ async fn handle_auth(
             println!();
 
             println!(
-                "{} RGB: {} | IR: {}",
-                style("Status:").bold(),
+                "{} RGB：{} | 红外：{}",
+                style("状态：").bold(),
                 style(format!("{:?}", rgb_status)).cyan(),
                 style(format!("{:?}", ir_status)).cyan()
             );
@@ -1036,7 +1084,7 @@ async fn handle_auth(
                     });
                 if let Some((face, pct)) = matched {
                     term.write_line(&format!(
-                        "{} Authenticated as: {} ({:.1}%, {}ms)",
+                        "{} 已认证为：{}（{:.1}%，{}毫秒）",
                         style("✓").green().bold(),
                         style(&face).green().bold(),
                         pct,
@@ -1044,7 +1092,7 @@ async fn handle_auth(
                     ))?;
                 } else {
                     term.write_line(&format!(
-                        "{} Authenticated as: {} ({}ms)",
+                        "{} 已认证为：{}（{}毫秒）",
                         style("✓").green().bold(),
                         style(user).green().bold(),
                         start.elapsed().as_millis()
@@ -1056,11 +1104,11 @@ async fn handle_auth(
 
     if !authenticated && !silent {
         term.write_line(&format!(
-            "{} Authentication failed ({}ms)",
+            "{} 认证失败（{}毫秒）",
             style("✗").red().bold(),
             start.elapsed().as_millis()
         ))?;
-        // "Authentication failed" alone can sound like a face mismatch even if the camera never
+        // "认证失败" alone can sound like a face mismatch even if the camera never
         // opened. Verbose mode has already printed the full diagnostic list.
         if !verbose && let Some(reason) = diagnostics.last() {
             term.write_line(&format!("  {}", style(reason).yellow()))?;
@@ -1105,7 +1153,7 @@ fn spectrum_badge(label: &str, enrolled: bool, configured: bool) -> String {
 
 fn write_no_faces(term: &Term, user: &str) -> anyhow::Result<()> {
     term.write_line(&format!(
-        "{} No faces found for {}",
+        "{} 未找到 {} 的人脸",
         style("i").cyan().bold(),
         style(user).bold()
     ))?;
@@ -1126,8 +1174,8 @@ async fn handle_list_faces(proxy: &GazeProxy<'_>, user: &str) -> anyhow::Result<
         });
     let (rgb_configured, ir_configured) = cameras.unwrap_or((true, true));
     let result = run_busy(
-        "Face database",
-        format!("Fetching faces for {user}..."),
+        "人脸数据库",
+        format!("正在获取 {user} 的人脸..."),
         Tone::Info,
         proxy.list_faces(user),
     )
@@ -1139,22 +1187,22 @@ async fn handle_list_faces(proxy: &GazeProxy<'_>, user: &str) -> anyhow::Result<
                 write_no_faces(&term, user)?;
             } else {
                 term.write_line(&format!(
-                    "\n{} face{} for {}:\n",
+                    "\n{} 个人脸{}，用户 {}：\n",
                     style(faces.len()).green().bold(),
-                    if faces.len() == 1 { "" } else { "s" },
+                    if faces.len() == 1 { "" } else { "" },
                     style(user).bold()
                 ))?;
                 for (face, count, has_rgb, has_ir) in faces {
                     let rgb_badge = spectrum_badge("RGB", has_rgb, rgb_configured);
                     let ir_badge = spectrum_badge("IR", has_ir, ir_configured);
                     term.write_line(&format!(
-                        "  {} {} {} {} ({} capture{})",
+                        "  {} {} {} {}（{} 组采集{}）",
                         style("•").cyan(),
                         style(face).bold(),
                         rgb_badge,
                         ir_badge,
                         count,
-                        if count == 1 { "" } else { "s" }
+                        if count == 1 { "" } else { "" }
                     ))?;
                 }
                 term.write_line("")?;
@@ -1165,7 +1213,7 @@ async fn handle_list_faces(proxy: &GazeProxy<'_>, user: &str) -> anyhow::Result<
                 write_no_faces(&term, user)?;
             } else {
                 term.write_line(&format!(
-                    "{} Failed to fetch faces: {}",
+                    "{} 无法获取人脸：{}",
                     style("✗").red().bold(),
                     dbus_error_message(&e)
                 ))?;
@@ -1179,8 +1227,8 @@ async fn handle_list_faces(proxy: &GazeProxy<'_>, user: &str) -> anyhow::Result<
 async fn handle_remove_face(proxy: &GazeProxy<'_>, user: &str, face: &str) -> anyhow::Result<()> {
     let term = Term::stdout();
     let result = run_busy(
-        "Remove face",
-        format!("Deleting face {face}..."),
+        "删除人脸",
+        format!("正在删除人脸 {face}..."),
         Tone::Warn,
         proxy.delete_face(user, face),
     )
@@ -1189,7 +1237,7 @@ async fn handle_remove_face(proxy: &GazeProxy<'_>, user: &str, face: &str) -> an
     match result {
         Ok(true) => {
             term.write_line(&format!(
-                "{} Face '{}' removed for '{}'",
+                "{} 已删除人脸 '{}'，用户 '{}'",
                 style("✓").green().bold(),
                 face,
                 user
@@ -1197,7 +1245,7 @@ async fn handle_remove_face(proxy: &GazeProxy<'_>, user: &str, face: &str) -> an
         }
         Ok(false) => {
             term.write_line(&format!(
-                "{} Face '{}' not found for '{}'",
+                "{} 未找到人脸 '{}'，用户 '{}'",
                 style("!").yellow().bold(),
                 face,
                 user
@@ -1205,7 +1253,7 @@ async fn handle_remove_face(proxy: &GazeProxy<'_>, user: &str, face: &str) -> an
         }
         Err(err) => {
             term.write_line(&format!(
-                "{} Failed to remove face: {}",
+                "{} 无法删除人脸：{}",
                 style("✗").red().bold(),
                 dbus_error_message(&err)
             ))?;
@@ -1223,8 +1271,8 @@ async fn handle_rename_face(
 ) -> anyhow::Result<()> {
     let term = Term::stdout();
     let result = run_busy(
-        "Rename face",
-        format!("Renaming face {from} -> {to}..."),
+        "重命名人脸",
+        format!("正在重命名人脸 {from} -> {to}..."),
         Tone::Info,
         proxy.rename_face(user, from, to),
     )
@@ -1233,7 +1281,7 @@ async fn handle_rename_face(
     match result {
         Ok(true) => {
             term.write_line(&format!(
-                "{} Face '{}' renamed to '{}' for '{}'",
+                "{} 已将人脸 '{}' 重命名为 '{}'，用户 '{}'",
                 style("✓").green().bold(),
                 from,
                 to,
@@ -1242,7 +1290,7 @@ async fn handle_rename_face(
         }
         Ok(false) => {
             term.write_line(&format!(
-                "{} Face '{}' not found for '{}'",
+                "{} 未找到人脸 '{}'，用户 '{}'",
                 style("!").yellow().bold(),
                 from,
                 user
@@ -1250,7 +1298,7 @@ async fn handle_rename_face(
         }
         Err(err) => {
             term.write_line(&format!(
-                "{} Failed to rename face: {}",
+                "{} 无法重命名人脸：{}",
                 style("✗").red().bold(),
                 dbus_error_message(&err)
             ))?;
@@ -1263,44 +1311,33 @@ async fn handle_rename_face(
 async fn handle_duress(proxy: &GazeProxy<'_>, user: &str, clear: bool) -> anyhow::Result<()> {
     let term = Term::stdout();
     if clear {
-        let cleared = proxy.clear_duress(user).await.map_err(|err| {
-            anyhow::anyhow!(
-                "Failed to clear the duress lockout: {}",
-                dbus_error_message(&err)
-            )
-        })?;
+        let cleared = proxy
+            .clear_duress(user)
+            .await
+            .map_err(|err| anyhow::anyhow!("无法解除胁迫锁定：{}", dbus_error_message(&err)))?;
         if cleared {
-            term.write_line(&format!(
-                "Face authentication re-enabled for {}.",
-                style(user).bold()
-            ))?;
+            term.write_line(&format!("已为 {} 重新启用人脸认证。", style(user).bold()))?;
         } else {
-            term.write_line(&format!(
-                "Face authentication was not locked for {}.",
-                style(user).bold()
-            ))?;
+            term.write_line(&format!("{} 的人脸认证未被锁定。", style(user).bold()))?;
         }
         return Ok(());
     }
 
-    let locked = proxy.duress_locked(user).await.map_err(|err| {
-        anyhow::anyhow!(
-            "Failed to read the duress lockout: {}",
-            dbus_error_message(&err)
-        )
-    })?;
+    let locked = proxy
+        .duress_locked(user)
+        .await
+        .map_err(|err| anyhow::anyhow!("无法读取胁迫锁定状态：{}", dbus_error_message(&err)))?;
     if locked {
         term.write_line(&format!(
-            "Face authentication for {} is {} after a duress signal. Log in with your password, \
-             or run `gaze duress --clear`.",
+            "收到胁迫信号后，{} 的人脸认证已{}。请使用密码登录，或运行 `gaze duress --clear`。",
             style(user).bold(),
-            style("locked").red().bold()
+            style("锁定").red().bold()
         ))?;
     } else {
         term.write_line(&format!(
-            "Face authentication for {} is {}.",
+            "{} 的人脸认证{}。",
             style(user).bold(),
-            style("not locked").green()
+            style("未锁定").green()
         ))?;
     }
     Ok(())
@@ -1309,8 +1346,8 @@ async fn handle_duress(proxy: &GazeProxy<'_>, user: &str, clear: bool) -> anyhow
 async fn handle_clear_user(proxy: &GazeProxy<'_>, user: &str) -> anyhow::Result<()> {
     let term = Term::stdout();
     let result = run_busy(
-        "Clear user",
-        format!("Deleting all data for {user}..."),
+        "清除用户",
+        format!("正在删除 {user} 的所有数据..."),
         Tone::Warn,
         proxy.delete_faces(user),
     )
@@ -1327,19 +1364,18 @@ async fn handle_clear_user(proxy: &GazeProxy<'_>, user: &str) -> anyhow::Result<
                 })
                 .map_err(|err| {
                     anyhow::anyhow!(
-                        "Face data cleared, but could not remove a stored keyring credential \
-                     for '{user}': {err}"
+                        "人脸数据已清除，但无法删除用户 '{user}' 已存储的钥匙环凭据：{err}"
                     )
                 })?;
             term.write_line(&format!(
-                "{} All data cleared for '{}'",
+                "{} 已清除 '{}' 的所有数据",
                 style("✓").green().bold(),
                 user
             ))?;
         }
         Err(err) => {
             term.write_line(&format!(
-                "{} Failed to clear user: {}",
+                "{} 无法清除用户：{}",
                 style("✗").red().bold(),
                 dbus_error_message(&err)
             ))?;
@@ -1561,12 +1597,12 @@ fn append_package_manager_uninstall_steps(
     match package_manager {
         PackageManager::Apt => {
             plan.push((
-                "Remove apt packages",
+                "删除 apt 软件包",
                 "sudo apt-get remove --purge -y gaze-omarchy gaze gaze-gui gaze-gnome-extension gaze-hyprlock gaze-kde 2>/dev/null || true"
                     .into(),
             ));
             plan.push((
-                "Remove apt repo + keyring",
+                "删除 apt 软件源和密钥环",
                 "sudo rm -f /etc/apt/sources.list.d/gundulabs.list \\
                   /usr/share/keyrings/gundulabs-archive-keyring.gpg && \\
                   sudo apt-get update 2>/dev/null || true"
@@ -1576,38 +1612,38 @@ fn append_package_manager_uninstall_steps(
         // Prefer Tumbleweed's native package manager.
         PackageManager::Zypper => {
             plan.push((
-                "Remove openSUSE PAM configuration",
+                "删除 openSUSE PAM 配置",
                 remove_suse_pam_configuration_cmd(),
             ));
-            plan.push(("Remove zypper packages", remove_zypper_packages_cmd()));
-            plan.push(("Remove zypper repo + key", remove_zypper_repo_and_key_cmd()));
+            plan.push(("删除 zypper 软件包", remove_zypper_packages_cmd()));
+            plan.push(("删除 zypper 软件源和密钥", remove_zypper_repo_and_key_cmd()));
         }
         PackageManager::Dnf => {
             plan.push((
-                "Remove dnf packages",
+                "删除 dnf 软件包",
                 "sudo dnf remove -y gaze-omarchy gaze gaze-gui gaze-gnome-extension gaze-hyprlock gaze-kde 2>/dev/null || true"
                     .into(),
             ));
             plan.push((
-                "Remove dnf repo",
+                "删除 dnf 软件源",
                 "sudo rm -f /etc/yum.repos.d/gundulabs.repo".into(),
             ));
         }
         PackageManager::RpmOstree => {
-            plan.push(("Remove layered packages", remove_rpm_ostree_packages_cmd()));
+            plan.push(("删除分层软件包", remove_rpm_ostree_packages_cmd()));
             plan.push((
-                "Remove dnf repo",
+                "删除 dnf 软件源",
                 "sudo rm -f /etc/yum.repos.d/gundulabs.repo".into(),
             ));
             plan.push((
-                "Reboot to finalize removal",
-                "echo 'Layered package removal takes effect after the next reboot.'".into(),
+                "重启以完成删除",
+                "echo '分层软件包将在下次重启后完成删除。'".into(),
             ));
         }
         PackageManager::Pacman => {
-            plan.push(("Remove pacman packages", remove_pacman_packages_cmd()));
+            plan.push(("删除 pacman 软件包", remove_pacman_packages_cmd()));
             plan.push((
-                "Remove old pacman repo entry",
+                "删除旧的 pacman 软件源条目",
                 "sudo sed -i '/^\\[gaze\\]/,/^$/d' /etc/pacman.conf && \\
                   sudo rm -f /etc/pacman.d/gaze-mirrorlist"
                     .into(),
@@ -1649,7 +1685,7 @@ fn detect_package_manager() -> Option<PackageManager> {
     )
 }
 
-const RESTORE_OMARCHY_LOCK_STEP: &str = "Restore the stock Omarchy lock before removing Gaze";
+const RESTORE_OMARCHY_LOCK_STEP: &str = "删除 Gaze 前恢复原版 Omarchy 锁屏";
 
 fn build_uninstall_plan(keep_data: bool) -> Vec<(&'static str, String)> {
     let mut plan: Vec<(&'static str, String)> = Vec::new();
@@ -1660,19 +1696,16 @@ fn build_uninstall_plan(keep_data: bool) -> Vec<(&'static str, String)> {
 
     if which("gnome-extensions") {
         plan.push((
-            "Disable and uninstall GNOME extension (best-effort)",
+            "禁用并卸载 GNOME 扩展（尽可能完成）",
             "gnome-extensions disable gaze@gundulabs.com 2>/dev/null || true; \
               gnome-extensions uninstall gaze@gundulabs.com 2>/dev/null || true"
                 .into(),
         ));
     }
 
+    plan.push(("重置 GNOME 锁屏和登录设置", reset_gnome_user_settings_cmd()));
     plan.push((
-        "Reset GNOME lock/login settings",
-        reset_gnome_user_settings_cmd(),
-    ));
-    plan.push((
-        "Remove per-user GNOME extension copies",
+        "删除各用户的 GNOME 扩展副本",
         "for d in /home/*/.local/share/gnome-shell/extensions /root/.local/share/gnome-shell/extensions; do \
           [ -d \"$d/gaze@gundulabs.com\" ] || continue; \
           sudo rm -rf \"$d/gaze@gundulabs.com\"; \
@@ -1680,36 +1713,30 @@ fn build_uninstall_plan(keep_data: bool) -> Vec<(&'static str, String)> {
             .into(),
     ));
     plan.push((
-        "Remove the installer's one-shot GNOME enable",
+        "删除安装程序的一次性 GNOME 启用项",
         "for h in /home/* /root; do \
           sudo rm -f \"$h/.config/autostart/gaze-gnome-enable.desktop\" \"$h/.local/share/gaze/gnome-enable.sh\"; \
           done"
             .into(),
     ));
-    plan.push((
-        "Remove GDM dconf overrides",
-        remove_gdm_dconf_overrides_cmd(),
-    ));
+    plan.push(("删除 GDM dconf 覆盖配置", remove_gdm_dconf_overrides_cmd()));
 
     if which("pam-auth-update") {
         plan.push((
-            "Remove Debian/Ubuntu PAM profile",
+            "删除 Debian/Ubuntu PAM 配置",
             "sudo pam-auth-update --package --remove gaze 2>/dev/null || true".into(),
         ));
     }
     if which("authselect") {
-        plan.push(("Restore authselect profile", restore_authselect_cmd()));
+        plan.push(("恢复 authselect 配置", restore_authselect_cmd()));
     }
 
     if which("pacman") && !which("pam-auth-update") && !which("authselect") {
-        plan.push((
-            "Remove Arch PAM configuration",
-            remove_arch_pam_configuration_cmd(),
-        ));
+        plan.push(("删除 Arch PAM 配置", remove_arch_pam_configuration_cmd()));
     }
 
     plan.push((
-        "Remove hyprlock Gaze PAM references",
+        "删除 hyprlock 对 Gaze PAM 的引用",
         "for d in /home/*/.config/hypr /root/.config/hypr; do \
           f=\"$d/hyprlock.conf\"; \
           [ -f \"$f\" ] || continue; \
@@ -1720,7 +1747,7 @@ fn build_uninstall_plan(keep_data: bool) -> Vec<(&'static str, String)> {
     ));
 
     plan.push((
-        "Stop and disable daemon",
+        "停止并禁用守护进程",
         "sudo systemctl disable --now gazed 2>/dev/null || true".into(),
     ));
 
@@ -1730,40 +1757,34 @@ fn build_uninstall_plan(keep_data: bool) -> Vec<(&'static str, String)> {
 
     if which("semodule") {
         plan.push((
-            "Remove SELinux policy",
+            "删除 SELinux 策略",
             "sudo semodule -r gaze-gdm-camera 2>/dev/null; sudo semodule -r gaze-greeter-keyring 2>/dev/null || true".into(),
         ));
     }
 
     plan.push((
-        "Remove unmanaged development links/files",
+        "删除未受软件包管理的开发链接和文件",
         remove_unmanaged_install_artifacts_cmd(),
     ));
 
     plan.push((
         // gazed holds decrypted face templates in memory, so its crash dumps
         // are biometric data too.
-        "Remove gaze core dumps",
+        "删除 gaze 核心转储",
         "[ -d /var/lib/systemd/coredump ] && \
           sudo find /var/lib/systemd/coredump \\( -name 'core.gazed.*' \
           -o -name 'core.gaze.*' -o -name 'core.gaze-gui.*' \\) -delete \
           2>/dev/null || true"
             .into(),
     ));
-    plan.push(("Remove model cache", "sudo rm -rf /var/cache/gaze".into()));
-    plan.push(("Remove config", "sudo rm -rf /etc/gaze".into()));
+    plan.push(("删除模型缓存", "sudo rm -rf /var/cache/gaze".into()));
+    plan.push(("删除配置", "sudo rm -rf /etc/gaze".into()));
     if !keep_data {
-        plan.push((
-            "Remove enrolled face data",
-            "sudo rm -rf /var/lib/gaze".into(),
-        ));
+        plan.push(("删除已录入的人脸数据", "sudo rm -rf /var/lib/gaze".into()));
     }
 
-    plan.push((
-        "Refresh GNOME system settings",
-        refresh_gnome_system_settings_cmd(),
-    ));
-    plan.push(("Reload systemd", "sudo systemctl daemon-reload".into()));
+    plan.push(("刷新 GNOME 系统设置", refresh_gnome_system_settings_cmd()));
+    plan.push(("重新加载 systemd", "sudo systemctl daemon-reload".into()));
 
     plan
 }
@@ -1772,10 +1793,7 @@ fn handle_uninstall(yes: bool, keep_data: bool, dry_run: bool) -> anyhow::Result
     let term = Term::stdout();
     let plan = build_uninstall_plan(keep_data);
 
-    term.write_line(&format!(
-        "\n{}\n",
-        style("Gaze uninstall plan").red().bold()
-    ))?;
+    term.write_line(&format!("\n{}\n", style("Gaze 卸载计划").red().bold()))?;
     for (i, (desc, cmd)) in plan.iter().enumerate() {
         term.write_line(&format!(
             "  {} {}\n    {}",
@@ -1788,12 +1806,12 @@ fn handle_uninstall(yes: bool, keep_data: bool, dry_run: bool) -> anyhow::Result
 
     if keep_data {
         term.write_line(&format!(
-            "  {} /var/lib/gaze (enrolled faces) will be preserved.",
+            "  {} 将保留 /var/lib/gaze（已录入的人脸）。",
             style("i").cyan().bold()
         ))?;
     } else {
         term.write_line(&format!(
-            "  {} This removes enrolled face data. Pass --keep-data to preserve it.",
+            "  {} 这将删除已录入的人脸数据。使用 --keep-data 可保留数据。",
             style("!").yellow().bold()
         ))?;
     }
@@ -1801,7 +1819,7 @@ fn handle_uninstall(yes: bool, keep_data: bool, dry_run: bool) -> anyhow::Result
 
     if dry_run {
         term.write_line(&format!(
-            "{} Dry run; no commands were executed.",
+            "{} 试运行；未执行任何命令。",
             style("i").cyan().bold()
         ))?;
         return Ok(());
@@ -1810,12 +1828,12 @@ fn handle_uninstall(yes: bool, keep_data: bool, dry_run: bool) -> anyhow::Result
     if !yes {
         let theme = ColorfulTheme::default();
         let proceed = Select::with_theme(&theme)
-            .with_prompt("Proceed with uninstall?")
-            .items(["No, cancel", "Yes, uninstall Gaze"])
+            .with_prompt("继续卸载？")
+            .items(["否，取消", "是，卸载 Gaze"])
             .default(0)
             .interact()?;
         if proceed != 1 {
-            term.write_line(&format!("{} Cancelled.", style("✗").red().bold()))?;
+            term.write_line(&format!("{} 已取消。", style("✗").red().bold()))?;
             return Ok(());
         }
     }
@@ -1825,28 +1843,26 @@ fn handle_uninstall(yes: bool, keep_data: bool, dry_run: bool) -> anyhow::Result
         let status = std::process::Command::new("sh").arg("-c").arg(cmd).status();
         match status {
             Ok(s) if s.success() => {
-                term.write_line(&format!("  {} done", style("✓").green()))?;
+                term.write_line(&format!("  {} 完成", style("✓").green()))?;
             }
             Ok(s) => {
                 if *desc == RESTORE_OMARCHY_LOCK_STEP {
                     anyhow::bail!(
-                        "Omarchy lock restoration failed; Gaze has not been removed. Run gaze-omarchy disable from your unlocked desktop first."
+                        "恢复 Omarchy 锁屏失败；尚未删除 Gaze。请先在已解锁的桌面中运行 gaze-omarchy disable。"
                     );
                 }
                 term.write_line(&format!(
-                    "  {} step exited with {} (continuing)",
+                    "  {} 步骤以 {} 退出（继续）",
                     style("!").yellow(),
                     s.code().unwrap_or(-1)
                 ))?;
             }
             Err(e) => {
                 if *desc == RESTORE_OMARCHY_LOCK_STEP {
-                    anyhow::bail!(
-                        "Cannot restore the Omarchy lock: {e}. Gaze has not been removed."
-                    );
+                    anyhow::bail!("无法恢复 Omarchy 锁屏：{e}。尚未删除 Gaze。");
                 }
                 term.write_line(&format!(
-                    "  {} failed to spawn: {} (continuing)",
+                    "  {} 无法启动：{}（继续）",
                     style("!").yellow(),
                     e
                 ))?;
@@ -1855,18 +1871,24 @@ fn handle_uninstall(yes: bool, keep_data: bool, dry_run: bool) -> anyhow::Result
     }
 
     term.write_line(&format!(
-        "\n{} Gaze uninstalled. A reboot is recommended to clear any in-memory state.",
+        "\n{} Gaze 已卸载。建议重启以清除内存中的状态。",
         style("✓").green().bold()
     ))?;
     term.write_line(&format!(
-        "  {} If a hyprlock.conf referenced Gaze, a backup was left next to it \
-          as hyprlock.conf.gaze-uninstall-bak.",
+        "  {} 如果 hyprlock.conf 引用了 Gaze，则已在其旁边保存备份 hyprlock.conf.gaze-uninstall-bak。",
         style("i").cyan().bold()
     ))?;
     Ok(())
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() {
+    if let Err(error) = run_main() {
+        eprintln!("错误：{error:#}");
+        std::process::exit(1);
+    }
+}
+
+fn run_main() -> anyhow::Result<()> {
     CompleteEnv::with_factory(Cli::command).complete();
 
     tokio::runtime::Builder::new_multi_thread()
@@ -1876,7 +1898,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn run() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+    let cli = parse_cli();
 
     if let Some(name) = command_requires_root(&cli.command)
         && !is_root()
@@ -1903,10 +1925,7 @@ async fn run() -> anyhow::Result<()> {
             let username = user.clone().unwrap_or_else(get_current_user);
             if *forget {
                 gaze_security::keyring::forget_for(backend, &username)?;
-                println!(
-                    "Stored {} credential removed for {username}.",
-                    backend.name()
-                );
+                println!("已删除 {username} 已存储的 {} 凭据。", backend.name());
             } else {
                 keyring::enroll(&username, &Config::load()?, backend)?;
             }
@@ -2012,7 +2031,7 @@ async fn run() -> anyhow::Result<()> {
                     "{} {}",
                     style("security.hybrid_policy:").bold(),
                     if config.security.hybrid_policy.is_empty() {
-                        format!("\"\" (resolved: {})", config.security.hybrid_policy())
+                        format!("\"\"（解析为：{}）", config.security.hybrid_policy())
                     } else {
                         config.security.hybrid_policy.clone()
                     }
@@ -2096,7 +2115,7 @@ async fn run() -> anyhow::Result<()> {
                     config.liveness.threshold
                 );
                 println!(
-                    "{} {:.1}s",
+                    "{} {:.1}秒",
                     style("liveness.max_seconds:").bold(),
                     config.liveness.max_seconds
                 );
@@ -2316,18 +2335,18 @@ mod tests {
     fn uninstall_plan_preserves_face_data_only_when_requested() {
         assert!(plan_has(
             &build_uninstall_plan(false),
-            "Remove enrolled face data"
+            "删除已录入的人脸数据"
         ));
         assert!(!plan_has(
             &build_uninstall_plan(true),
-            "Remove enrolled face data"
+            "删除已录入的人脸数据"
         ));
     }
 
     #[test]
     fn uninstall_always_removes_unmanaged_development_artifacts() {
         let plan = build_uninstall_plan(true);
-        assert!(plan_has(&plan, "Remove unmanaged development links/files"));
+        assert!(plan_has(&plan, "删除未受软件包管理的开发链接和文件"));
 
         let command = remove_unmanaged_install_artifacts_cmd();
         for path in [
@@ -2347,19 +2366,19 @@ mod tests {
     #[test]
     fn uninstall_plan_removes_per_user_extensions_and_core_dumps() {
         let plan = build_uninstall_plan(true);
-        assert!(plan_has(&plan, "Remove per-user GNOME extension copies"));
-        assert!(plan_has(&plan, "Remove gaze core dumps"));
+        assert!(plan_has(&plan, "删除各用户的 GNOME 扩展副本"));
+        assert!(plan_has(&plan, "删除 gaze 核心转储"));
 
         let (_, cmd) = plan
             .iter()
-            .find(|(desc, _)| *desc == "Remove per-user GNOME extension copies")
+            .find(|(desc, _)| *desc == "删除各用户的 GNOME 扩展副本")
             .unwrap();
         assert!(cmd.contains("/home/*/.local/share/gnome-shell/extensions"));
         assert!(cmd.contains("/root/.local/share/gnome-shell/extensions"));
 
         let (_, cmd) = plan
             .iter()
-            .find(|(desc, _)| *desc == "Remove gaze core dumps")
+            .find(|(desc, _)| *desc == "删除 gaze 核心转储")
             .unwrap();
         assert!(cmd.contains("/var/lib/systemd/coredump"));
     }
@@ -2452,9 +2471,9 @@ mod tests {
         append_package_manager_uninstall_steps(&mut plan, PackageManager::Zypper);
 
         assert_eq!(plan.len(), 3);
-        assert_eq!(plan[0].0, "Remove openSUSE PAM configuration");
-        assert_eq!(plan[1].0, "Remove zypper packages");
-        assert_eq!(plan[2].0, "Remove zypper repo + key");
+        assert_eq!(plan[0].0, "删除 openSUSE PAM 配置");
+        assert_eq!(plan[1].0, "删除 zypper 软件包");
+        assert_eq!(plan[2].0, "删除 zypper 软件源和密钥");
 
         let command = &plan[2].1;
         assert!(command.contains("/etc/zypp/repos.d/gundulabs.repo"));
@@ -2598,7 +2617,7 @@ mod tests {
         assert_eq!(
             options[1],
             (
-                "/dev/video9 (configured)".to_string(),
+                "/dev/video9（已配置）".to_string(),
                 "/dev/video9".to_string()
             ),
             "a camera that is unplugged right now must not silently change"
@@ -2705,7 +2724,7 @@ mod tests {
             return;
         }
         let err = reexec_as_root("add-face").expect_err("a second escalation would loop forever");
-        assert!(err.to_string().contains("did not gain root privileges"));
+        assert!(err.to_string().contains("未获得 root 权限"));
     }
 
     #[test]

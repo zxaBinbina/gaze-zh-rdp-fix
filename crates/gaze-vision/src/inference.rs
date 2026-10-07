@@ -48,19 +48,15 @@ impl InferenceRuntime {
 
 fn session_builder() -> anyhow::Result<SessionBuilder> {
     Session::builder()
-        .map_err(|error| {
-            anyhow::anyhow!("failed to create an ONNX Runtime session builder: {error}")
-        })?
+        .map_err(|error| anyhow::anyhow!("无法创建 ONNX Runtime 会话构建器：{error}"))?
         .with_optimization_level(GraphOptimizationLevel::All)
-        .map_err(|error| {
-            anyhow::anyhow!("failed to set the ONNX Runtime graph optimization level: {error}")
-        })
+        .map_err(|error| anyhow::anyhow!("无法设置 ONNX Runtime 图优化级别：{error}"))
 }
 
 fn build_cpu_session(model_path: &str) -> anyhow::Result<Session> {
     session_builder()?
         .commit_from_file(model_path)
-        .with_context(|| format!("failed to load ONNX model {model_path} on cpu"))
+        .with_context(|| format!("无法在 CPU 上加载 ONNX 模型 {model_path}"))
 }
 
 fn cache_dir(
@@ -94,8 +90,7 @@ fn cache_dir(
                 .map(|byte| format!("{byte:02x}"))
                 .collect::<String>(),
         );
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("cannot create inference cache {}", dir.display()))?;
+    std::fs::create_dir_all(&dir).with_context(|| format!("无法创建推理缓存 {}", dir.display()))?;
     Ok(dir)
 }
 
@@ -112,7 +107,7 @@ fn build_accelerated_session(
     };
     anyhow::ensure!(
         available,
-        "loaded ONNX Runtime does not include the {provider} execution provider; register its runtime and restart gazed"
+        "已加载的 ONNX Runtime 不包含 {provider} 执行后端；请注册其运行时并重启 gazed"
     );
     let cache = cache_dir(library, model_path, provider)?;
     let cache = cache.to_string_lossy();
@@ -129,7 +124,7 @@ fn build_accelerated_session(
                 .with_arbitrary_config("enable_cache_file_io_in_mem", "0");
             ep.build().error_on_failure()
         }
-        _ => anyhow::bail!("unsupported acceleration provider {provider}"),
+        _ => anyhow::bail!("不支持的加速后端 {provider}"),
     };
     let mut builder = session_builder()?;
     if device == "npu"
@@ -150,20 +145,16 @@ fn build_accelerated_session(
                 if shape[index] < 0 && !symbol.is_empty() {
                     builder = builder
                         .with_dimension_override(symbol, [1, 3, size as i64, size as i64][index])
-                        .map_err(|error| {
-                            anyhow::anyhow!("failed to freeze input dimensions: {error}")
-                        })?;
+                        .map_err(|error| anyhow::anyhow!("无法固定输入维度：{error}"))?;
                 }
             }
         }
     }
     let mut session = builder
         .with_execution_providers([dispatch])
-        .map_err(|error| anyhow::anyhow!("failed to register {provider}: {error}"))?
+        .map_err(|error| anyhow::anyhow!("无法注册 {provider}：{error}"))?
         .commit_from_file(model_path)
-        .with_context(|| {
-            format!("failed to load ONNX model {model_path} on {provider}/{device}")
-        })?;
+        .with_context(|| format!("无法在 {provider}/{device} 上加载 ONNX 模型 {model_path}"))?;
     // Catch lazy compilation/shape/driver errors before the first authentication attempt.
     probe_session(&mut session, model_path)?;
     Ok(session)
@@ -191,7 +182,7 @@ fn probe_session(session: &mut Session, model_path: &str) -> anyhow::Result<()> 
         .run(ort::inputs![ort::value::TensorRef::from_array_view(
             &input
         )?])
-        .with_context(|| format!("{model_path} failed its accelerator warmup"))?;
+        .with_context(|| format!("{model_path} 未通过加速器预热"))?;
     Ok(())
 }
 
@@ -224,13 +215,13 @@ pub fn create_session(
         config.execution_provider.as_str()
     };
     let reason = if provider == "cpu" {
-        library.fallback_reason.clone().unwrap_or_else(|| {
-            "no accelerator runtime selected; restart gazed after installing a vendor runtime"
-                .to_string()
-        })
+        library
+            .fallback_reason
+            .clone()
+            .unwrap_or_else(|| "未选择加速器运行时；安装厂商运行时后请重启 gazed".to_string())
     } else if library.provider != provider && library.provider != "cpu" {
         format!(
-            "the loaded runtime is {}; restart gazed to select {provider}",
+            "已加载的运行时为 {}；请重启 gazed 以选择 {provider}",
             library.provider
         )
     } else {
@@ -251,9 +242,8 @@ pub fn create_session(
         }
     };
     tracing::warn!(provider, model = model_path, %reason, "Accelerator setup failed; using CPU");
-    let session = build_cpu_session(model_path).with_context(|| {
-        format!("accelerator setup failed ({reason}) and CPU fallback also failed")
-    })?;
+    let session = build_cpu_session(model_path)
+        .with_context(|| format!("加速器设置失败（{reason}），CPU 回退也失败"))?;
     Ok((session, InferenceRuntime::cpu(config, Some(reason))))
 }
 

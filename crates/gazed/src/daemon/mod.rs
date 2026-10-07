@@ -54,7 +54,8 @@ const GDM_DCONF_OVERRIDE_CONTENT: &str =
     "[org/gnome/shell/extensions/gaze]\nenable-face-authentication=true\n";
 const CLAIM_TIMEOUT_SECS: u64 = 300;
 const VERIFY_TOO_DARK_TIMEOUT: Duration = Duration::from_secs(1);
-const LIVENESS_GATE_DIAGNOSTIC: &str = "Face matched, but the liveness check did not pass. Move slightly and try again, or lower liveness.threshold.";
+const LIVENESS_GATE_DIAGNOSTIC: &str =
+    "人脸匹配成功，但未通过活体检测。请稍微移动后重试，或降低 liveness.threshold。";
 const VERIFY_NO_FACE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Bounds a face that stays badly framed: it refreshes the no-face deadline without ever
 /// yielding an embedding. Kept under `CAMERA_AUTH_TIMEOUT_SECS` in `pam-gaze`.
@@ -133,7 +134,7 @@ async fn replace_claim_task(
 ) -> fdo::Result<oneshot::Receiver<()>> {
     let state = claim_state.lock().await;
     if !claim_has_epoch(&state, epoch) {
-        return Err(fdo::Error::AccessDenied("Daemon claim was revoked".into()));
+        return Err(fdo::Error::AccessDenied("守护进程使用权已被撤销".into()));
     }
     let mut cancel = active_cancel.lock().await;
     if let Some(previous) = cancel.take() {
@@ -151,7 +152,7 @@ async fn cancel_claim_task(
 ) -> fdo::Result<()> {
     let state = claim_state.lock().await;
     if !claim_has_epoch(&state, epoch) {
-        return Err(fdo::Error::AccessDenied("Daemon claim was revoked".into()));
+        return Err(fdo::Error::AccessDenied("守护进程使用权已被撤销".into()));
     }
     if let Some(tx) = active_cancel.lock().await.take() {
         let _ = tx.send(());
@@ -356,7 +357,7 @@ fn validate_keyring_verification(
         unlock_kwallet: false,
     }
     .validate_keyring(liveness)
-    .map_err(|e| fdo::Error::Failed(format!("Keyring verification unavailable: {e}")))
+    .map_err(|e| fdo::Error::Failed(format!("钥匙环验证不可用：{e}")))
 }
 
 fn resolve_config(loaded: anyhow::Result<Config>, last_good: &mut Config) -> Config {

@@ -33,7 +33,7 @@ fn expected_pack_sha256(pack_name: &str) -> anyhow::Result<&'static str> {
     match pack_name {
         "buffalo_sc" => Ok(BUFFALO_SC_SHA256),
         "buffalo_l" => Ok(BUFFALO_L_SHA256),
-        _ => anyhow::bail!("unknown model pack '{pack_name}'"),
+        _ => anyhow::bail!("未知模型包 '{pack_name}'"),
     }
 }
 
@@ -41,7 +41,7 @@ fn pack_for_model(model_name: &str) -> anyhow::Result<&'static str> {
     match model_name {
         "det_500m.onnx" | "w600k_mbf.onnx" => Ok("buffalo_sc"),
         "det_10g.onnx" | "w600k_r50.onnx" => Ok("buffalo_l"),
-        _ => anyhow::bail!("no known model pack provides '{model_name}'"),
+        _ => anyhow::bail!("没有已知模型包提供 '{model_name}'"),
     }
 }
 
@@ -93,7 +93,7 @@ fn validate_model_name(name: &str) -> anyhow::Result<()> {
         || name.chars().any(char::is_control)
         || !name.ends_with(".onnx")
     {
-        anyhow::bail!("model name must be a single .onnx file name");
+        anyhow::bail!("模型名称必须是单个 .onnx 文件名");
     }
     Ok(())
 }
@@ -123,7 +123,7 @@ fn verify_sha256(path: &Path, expected: &str) -> anyhow::Result<()> {
     let actual = sha256_file(path)?;
     if actual != expected {
         anyhow::bail!(
-            "checksum mismatch for {}: expected {}, got {}",
+            "{} 的校验和不匹配：预期为 {}，实际为 {}",
             path.display(),
             expected,
             actual
@@ -135,7 +135,7 @@ fn verify_sha256(path: &Path, expected: &str) -> anyhow::Result<()> {
 fn ensure_regular_model(path: &Path) -> anyhow::Result<()> {
     let meta = fs::symlink_metadata(path)?;
     if meta.file_type().is_symlink() || !meta.is_file() {
-        anyhow::bail!("model path is not a regular file: {}", path.display());
+        anyhow::bail!("模型路径不是普通文件：{}", path.display());
     }
     Ok(())
 }
@@ -155,7 +155,7 @@ fn download_file(url: &str, dest: &Path, expected_sha256: &str) -> anyhow::Resul
     let file_name = dest
         .file_name()
         .and_then(|n| n.to_str())
-        .ok_or_else(|| anyhow::anyhow!("invalid model file path"))?;
+        .ok_or_else(|| anyhow::anyhow!("模型文件路径无效"))?;
     let tmp_path = dest.with_file_name(format!(".{file_name}.{}.tmp", std::process::id()));
     let mut file = fs::OpenOptions::new()
         .write(true)
@@ -246,10 +246,10 @@ pub fn ensure_models(
     }
 
     if !det_path.exists() {
-        anyhow::bail!("Detection model '{detector_name}' not found in pack");
+        anyhow::bail!("模型包中未找到检测模型 '{detector_name}'");
     }
     if !rec_path.exists() {
-        anyhow::bail!("Recognition model '{recognizer_name}' not found in pack");
+        anyhow::bail!("模型包中未找到识别模型 '{recognizer_name}'");
     }
     verify_known_model(&det_path, detector_name)?;
     verify_known_model(&rec_path, recognizer_name)?;

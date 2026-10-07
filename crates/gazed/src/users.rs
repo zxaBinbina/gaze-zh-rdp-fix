@@ -27,9 +27,9 @@ pub enum UserDbError {
 impl std::fmt::Display for UserDbError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UserDbError::UserNotFound(username) => write!(f, "User '{username}' not found"),
-            UserDbError::FaceNotFound(face_name) => write!(f, "Face '{face_name}' not found"),
-            UserDbError::FaceExists(face_name) => write!(f, "Face '{face_name}' already exists"),
+            UserDbError::UserNotFound(username) => write!(f, "未找到用户 '{username}'"),
+            UserDbError::FaceNotFound(face_name) => write!(f, "未找到人脸 '{face_name}'"),
+            UserDbError::FaceExists(face_name) => write!(f, "人脸 '{face_name}' 已存在"),
             UserDbError::InvalidName(msg) => write!(f, "{msg}"),
             UserDbError::Io(err) => write!(f, "{err}"),
         }
@@ -55,7 +55,7 @@ impl UserDatabase {
     fn validate_component(kind: &str, value: &str) -> Result<(), UserDbError> {
         if value.is_empty() || value.trim() != value {
             return Err(UserDbError::InvalidName(format!(
-                "{kind} cannot be empty or contain leading/trailing whitespace"
+                "{kind}不能为空，也不能包含首尾空白"
             )));
         }
         if value == "."
@@ -66,7 +66,7 @@ impl UserDatabase {
             || value.chars().any(char::is_control)
         {
             return Err(UserDbError::InvalidName(format!(
-                "{kind} must be a single safe path component"
+                "{kind}必须是单个安全的路径组成部分"
             )));
         }
         Ok(())
@@ -77,11 +77,11 @@ impl UserDatabase {
     }
 
     pub fn validate_face_name(face_name: &str) -> Result<(), UserDbError> {
-        Self::validate_component("face name", face_name)
+        Self::validate_component("人脸名称", face_name)
     }
 
     fn validate_template_id(template_id: &str) -> Result<(), UserDbError> {
-        Self::validate_component("template id", template_id)
+        Self::validate_component("模板 ID", template_id)
     }
 
     fn ensure_private_dir(path: &Path) -> std::io::Result<()> {
@@ -89,7 +89,7 @@ impl UserDatabase {
         let meta = fs::symlink_metadata(path)?;
         if meta.file_type().is_symlink() || !meta.is_dir() {
             return Err(std::io::Error::other(format!(
-                "{} is not a private directory",
+                "{} 不是私有目录",
                 path.display()
             )));
         }
@@ -101,7 +101,7 @@ impl UserDatabase {
         let meta = fs::symlink_metadata(path)?;
         if meta.file_type().is_symlink() || !meta.is_dir() {
             return Err(std::io::Error::other(format!(
-                "{} is not a private directory",
+                "{} 不是私有目录",
                 path.display()
             )));
         }
@@ -150,29 +150,24 @@ impl UserDatabase {
     fn read_embedding(&self, path: &Path) -> anyhow::Result<Array1<f32>> {
         let meta = fs::symlink_metadata(path)?;
         if !meta.file_type().is_file() {
-            anyhow::bail!("embedding path is not a regular file: {}", path.display());
+            anyhow::bail!("特征向量路径不是普通文件：{}", path.display());
         }
         let raw = fs::read(path)?;
         let bytes = if crypto::is_encrypted(&raw) {
-            let cipher = self.cipher.as_ref().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "{} is encrypted but template encryption is disabled",
-                    path.display()
-                )
-            })?;
+            let cipher = self
+                .cipher
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("{} 已加密，但模板加密已禁用", path.display()))?;
             cipher.decrypt(&raw)?
         } else if self.cipher.is_some() {
             // Plaintext here would bypass AES-GCM authentication and allow an unauthenticated
             // template into the encrypted store; it must go through explicit migration instead.
-            anyhow::bail!(
-                "{} is not encrypted but template encryption is enabled",
-                path.display()
-            );
+            anyhow::bail!("{} 未加密，但模板加密已启用", path.display());
         } else {
             raw
         };
         if bytes.is_empty() || bytes.len() % std::mem::size_of::<f32>() != 0 {
-            anyhow::bail!("invalid embedding length in {}", path.display());
+            anyhow::bail!("{} 中的特征向量长度无效", path.display());
         }
         let embed_vec = bytes
             .as_chunks::<{ std::mem::size_of::<f32>() }>()
@@ -184,7 +179,7 @@ impl UserDatabase {
     }
 
     fn encode_embedding(&self, embed: &Array1<f32>) -> anyhow::Result<Vec<u8>> {
-        let embed_slice = embed.as_slice().expect("Failed to get embedding slice");
+        let embed_slice = embed.as_slice().expect("无法获取特征向量切片");
         // Templates are not portable across architectures with different endianness.
         let plain: &[u8] = unsafe {
             std::slice::from_raw_parts(
@@ -326,10 +321,11 @@ impl UserDatabase {
     fn stage_file_bytes(path: &Path, bytes: &[u8]) -> anyhow::Result<PathBuf> {
         let parent = path
             .parent()
-            .ok_or_else(|| anyhow::anyhow!("embedding path has no parent: {}", path.display()))?;
-        let file_name = path.file_name().and_then(|n| n.to_str()).ok_or_else(|| {
-            anyhow::anyhow!("embedding path has no file name: {}", path.display())
-        })?;
+            .ok_or_else(|| anyhow::anyhow!("特征向量路径没有父目录：{}", path.display()))?;
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| anyhow::anyhow!("特征向量路径没有文件名：{}", path.display()))?;
         let tmp = parent.join(format!(".{file_name}.{}.tmp", std::process::id()));
         let mut file = OpenOptions::new()
             .write(true)
@@ -458,7 +454,7 @@ impl UserDatabase {
         let meta = fs::symlink_metadata(&face_dir)?;
         if meta.file_type().is_symlink() || !meta.is_dir() {
             return Err(UserDbError::Io(std::io::Error::other(format!(
-                "{} is not a face directory",
+                "{} 不是人脸目录",
                 face_dir.display()
             ))));
         }
@@ -779,15 +775,15 @@ mod tests {
     fn error_display_messages_are_stable() {
         assert_eq!(
             UserDbError::UserNotFound("alice".to_string()).to_string(),
-            "User 'alice' not found"
+            "未找到用户 'alice'"
         );
         assert_eq!(
             UserDbError::FaceNotFound("work".to_string()).to_string(),
-            "Face 'work' not found"
+            "未找到人脸 'work'"
         );
         assert_eq!(
             UserDbError::FaceExists("home".to_string()).to_string(),
-            "Face 'home' already exists"
+            "人脸 'home' 已存在"
         );
         assert_eq!(
             UserDbError::InvalidName("bad name".to_string()).to_string(),

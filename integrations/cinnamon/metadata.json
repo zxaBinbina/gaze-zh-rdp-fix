@@ -1,7 +1,7 @@
 {
     "uuid": "gaze@gundulabs.com",
     "name": "Gaze",
-    "description": "Cinnamon extension for Gaze face authentication and PolKit confirmation",
+    "description": "用于 Gaze 人脸认证和 PolKit 确认的 Cinnamon 扩展",
     "cinnamon-version": [
         "5.4",
         "5.6",

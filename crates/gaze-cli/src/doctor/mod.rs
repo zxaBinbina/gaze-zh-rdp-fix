@@ -147,7 +147,7 @@ impl Report {
 
     fn print(&self) -> anyhow::Result<()> {
         let term = Term::stdout();
-        term.write_line(&format!("\n{}\n", style("Gaze doctor").cyan().bold()))?;
+        term.write_line(&format!("\n{}\n", style("Gaze 诊断").cyan().bold()))?;
 
         for check in &self.checks {
             let (symbol, label) = match check.level {
@@ -172,14 +172,14 @@ impl Report {
         let warnings = self.count(Level::Warning);
         let errors = self.count(Level::Error);
         term.write_line(&format!(
-            "\n{} {passed} passed, {off} off, {warnings} warning{}, {errors} error{}",
-            style("Summary:").bold(),
-            if warnings == 1 { "" } else { "s" },
-            if errors == 1 { "" } else { "s" }
+            "\n{} {passed} 项通过，{off} 项关闭，{warnings} 项警告{}，{errors} 项错误{}",
+            style("汇总：").bold(),
+            if warnings == 1 { "" } else { "" },
+            if errors == 1 { "" } else { "" }
         ))?;
         if off > 0 {
             term.write_line(
-                &style("○ marks a working feature you have switched off; the line under it turns it on.")
+                &style("○ 表示正常但已被您关闭的功能；下方列出了启用步骤。")
                     .dim()
                     .to_string(),
             )?;
@@ -237,9 +237,9 @@ pub async fn run(username: &str, benchmark: bool) -> anyhow::Result<bool> {
 fn check_platform(report: &mut Report) {
     if std::env::consts::OS != "linux" {
         report.error(
-            "Platform",
-            format!("{} is not supported", std::env::consts::OS),
-            "Run Gaze on Linux.",
+            "平台",
+            format!("不支持 {}", std::env::consts::OS),
+            "请在 Linux 上运行 Gaze。",
         );
         return;
     }
@@ -247,7 +247,7 @@ fn check_platform(report: &mut Report) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if gaze_core::cpu::supports_inference() {
-            report.pass("CPU", "AVX2 is available");
+            report.pass("CPU", "AVX2 可用");
         } else {
             report.error(
                 "CPU",
@@ -260,10 +260,7 @@ fn check_platform(report: &mut Report) {
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
     report.pass(
         "CPU",
-        format!(
-            "{} does not require the x86 AVX2 check",
-            std::env::consts::ARCH
-        ),
+        format!("{} 无需进行 x86 AVX2 检查", std::env::consts::ARCH),
     );
 }
 
@@ -311,7 +308,7 @@ mod tests {
     #[test]
     fn a_feature_switched_off_is_not_a_checkmark_and_still_says_how_to_turn_it_on() {
         let mut report = Report::default();
-        report.off("GDM login face auth", "off", "Turn it on: flip the switch.");
+        report.off("GDM 登录人脸认证", "off", "启用方法：打开开关。");
 
         let check = &report.checks[0];
         assert_eq!(check.level, Level::Off);

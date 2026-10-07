@@ -79,14 +79,14 @@ fn status_style(status: CaptureStatus, active: bool) -> (f64, f64, f64, f64) {
 
 fn status_label(status: CaptureStatus) -> &'static str {
     match status {
-        CaptureStatus::Unused => "Camera Not Activated", // This should never be shown
-        CaptureStatus::NoFace => "No Face",
-        CaptureStatus::TooDark => "Need More Light",
-        CaptureStatus::NotCentered => "Not Centered",
-        CaptureStatus::Clipped => "Face Clipped",
-        CaptureStatus::TooFar => "Come Closer",
-        CaptureStatus::TooClose => "Back Up",
-        CaptureStatus::Ready | CaptureStatus::Usable => "Ready",
+        CaptureStatus::Unused => "摄像头未启用", // This should never be shown
+        CaptureStatus::NoFace => "未检测到人脸",
+        CaptureStatus::TooDark => "光线不足",
+        CaptureStatus::NotCentered => "请将人脸居中",
+        CaptureStatus::Clipped => "人脸超出画面",
+        CaptureStatus::TooFar => "请靠近一点",
+        CaptureStatus::TooClose => "请后退一点",
+        CaptureStatus::Ready | CaptureStatus::Usable => "就绪",
     }
 }
 
@@ -115,7 +115,7 @@ impl CameraFeed {
             let mut cam = match Camera::open(&device) {
                 Ok(c) => c,
                 Err(err) => {
-                    error!(%err, "Camera open failed");
+                    error!(%err, "无法打开摄像头");
                     return;
                 }
             };
@@ -346,7 +346,7 @@ impl CameraFeed {
         let texture = match gdk::Texture::from_bytes(&glib::Bytes::from(jpeg)) {
             Ok(texture) => texture,
             Err(err) => {
-                error!(%err, "Decoding an enrollment preview frame failed");
+                error!(%err, "无法解码录入预览帧");
                 return;
             }
         };
@@ -454,13 +454,13 @@ mod tests {
 
     #[test]
     fn every_status_has_a_user_facing_label() {
-        assert_eq!(status_label(CaptureStatus::NoFace), "No Face");
-        assert_eq!(status_label(CaptureStatus::TooDark), "Need More Light");
-        assert_eq!(status_label(CaptureStatus::NotCentered), "Not Centered");
-        assert_eq!(status_label(CaptureStatus::Clipped), "Face Clipped");
-        assert_eq!(status_label(CaptureStatus::TooFar), "Come Closer");
-        assert_eq!(status_label(CaptureStatus::TooClose), "Back Up");
-        assert_eq!(status_label(CaptureStatus::Ready), "Ready");
-        assert_eq!(status_label(CaptureStatus::Usable), "Ready");
+        assert_eq!(status_label(CaptureStatus::NoFace), "未检测到人脸");
+        assert_eq!(status_label(CaptureStatus::TooDark), "光线不足");
+        assert_eq!(status_label(CaptureStatus::NotCentered), "请将人脸居中");
+        assert_eq!(status_label(CaptureStatus::Clipped), "人脸超出画面");
+        assert_eq!(status_label(CaptureStatus::TooFar), "请靠近一点");
+        assert_eq!(status_label(CaptureStatus::TooClose), "请后退一点");
+        assert_eq!(status_label(CaptureStatus::Ready), "就绪");
+        assert_eq!(status_label(CaptureStatus::Usable), "就绪");
     }
 }

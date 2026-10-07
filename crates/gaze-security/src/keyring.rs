@@ -33,7 +33,7 @@ impl Backend {
     }
     pub fn name(self) -> &'static str {
         match self {
-            Self::Gnome => "GNOME Keyring",
+            Self::Gnome => "GNOME 钥匙环",
             Self::KWallet => "KWallet",
         }
     }
@@ -65,10 +65,7 @@ pub struct Account {
 
 impl Account {
     fn uid(username: &str) -> anyhow::Result<u32> {
-        ensure!(
-            unsafe { libc::geteuid() } == 0,
-            "keyring setup requires root"
-        );
+        ensure!(unsafe { libc::geteuid() } == 0, "钥匙环设置需要 root 权限");
         let name = CString::new(username)?;
         let mut buffer = Zeroizing::new(vec![0u8; 65536]);
         let mut pwd = std::mem::MaybeUninit::<libc::passwd>::uninit();
@@ -82,13 +79,13 @@ impl Account {
                 &mut result,
             )
         };
-        ensure!(status == 0 && !result.is_null(), "account not found");
+        ensure!(status == 0 && !result.is_null(), "未找到账户");
         Ok(unsafe { (*result).pw_uid })
     }
 
     pub fn lookup(username: &str) -> anyhow::Result<Self> {
         let uid = Self::uid(username)?;
-        ensure!(uid != 0, "root keyring enrollment is not supported");
+        ensure!(uid != 0, "不支持录入 root 钥匙环");
         let name = CString::new(username)?;
         let mut buffer = Zeroizing::new(vec![0u8; 65536]);
 
@@ -105,19 +102,19 @@ impl Account {
         };
         ensure!(
             status == 0,
-            "shadow password record is unreadable: {}",
+            "shadow 密码记录不可读：{}",
             std::io::Error::from_raw_os_error(status)
         );
-        ensure!(!result.is_null(), "no shadow password record");
+        ensure!(!result.is_null(), "没有 shadow 密码记录");
         let shadow = unsafe { &*result };
         ensure!(
             !shadow.sp_pwdp.is_null() && shadow.sp_lstchg != 0,
-            "account requires a password change"
+            "账户需要修改密码"
         );
         let hash = unsafe { CStr::from_ptr(shadow.sp_pwdp) }.to_bytes();
         ensure!(
             !hash.is_empty() && !matches!(hash[0], b'!' | b'*'),
-            "account password is empty or locked"
+            "账户密码为空或已锁定"
         );
         Ok(Self::bound_to(uid, username, hash))
     }
@@ -140,7 +137,7 @@ impl Account {
 pub fn validate_password(password: &[u8]) -> anyhow::Result<()> {
     ensure!(
         !password.is_empty() && password.len() <= MAX_PASSWORD && !password.contains(&0),
-        "keyring password must contain 1..=4096 bytes and no NUL"
+        "钥匙环密码必须包含 1..=4096 个字节，且不能包含 NUL"
     );
     Ok(())
 }
@@ -155,21 +152,21 @@ fn encrypt(
     validate_password(password)?;
     ensure!(
         public.len() <= 4096 && private.len() <= 4096,
-        "invalid sealed key"
+        "密封密钥无效"
     );
     let mut nonce = [0; 12];
-    getrandom::fill(&mut nonce).map_err(|_| anyhow::anyhow!("random nonce unavailable"))?;
+    getrandom::fill(&mut nonce).map_err(|_| anyhow::anyhow!("无法生成随机 nonce"))?;
     let mut secret = Zeroizing::new(Vec::with_capacity(password.len() + 1));
     secret.extend_from_slice(password);
     secret.push(0);
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| anyhow::anyhow!("invalid key"))?;
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| anyhow::anyhow!("密钥无效"))?;
     let tag = cipher
         .encrypt_inout_detached(
             &Nonce::from(nonce),
             &account.binding,
             secret.as_mut_slice().into(),
         )
-        .map_err(|_| anyhow::anyhow!("credential encryption failed"))?;
+        .map_err(|_| anyhow::anyhow!("凭据加密失败"))?;
     // GZK1 | public/private lengths (u32 LE) | sealed blobs | nonce | ciphertext | tag.
     let mut blob = Vec::new();
     blob.extend_from_slice(MAGIC);
@@ -189,27 +186,26 @@ where
 {
     ensure!(
         blob.len() >= 12 && blob.len() <= MAX_BLOB && &blob[..4] == MAGIC,
-        "invalid credential record"
+        "凭据记录无效"
     );
     let public_len = u32::from_le_bytes(blob[4..8].try_into()?) as usize;
     let private_len = u32::from_le_bytes(blob[8..12].try_into()?) as usize;
     ensure!(
         public_len <= 4096 && private_len <= 4096,
-        "invalid sealed key length"
+        "密封密钥长度无效"
     );
     let end = 12 + public_len + private_len;
     let ciphertext_len = blob.len().checked_sub(end + 12 + 16);
     ensure!(
         ciphertext_len.is_some_and(|len| (2..=MAX_PASSWORD + 1).contains(&len)),
-        "invalid credential ciphertext length"
+        "凭据密文长度无效"
     );
     let key = unseal(&blob[12..12 + public_len], &blob[12 + public_len..end])?;
     let cipher =
-        Aes256Gcm::new_from_slice(key.as_ref()).map_err(|_| anyhow::anyhow!("invalid key"))?;
-    let nonce =
-        Nonce::try_from(&blob[end..end + 12]).map_err(|_| anyhow::anyhow!("invalid nonce"))?;
+        Aes256Gcm::new_from_slice(key.as_ref()).map_err(|_| anyhow::anyhow!("密钥无效"))?;
+    let nonce = Nonce::try_from(&blob[end..end + 12]).map_err(|_| anyhow::anyhow!("nonce 无效"))?;
     let tag = aes_gcm::Tag::try_from(&blob[blob.len() - 16..])
-        .map_err(|_| anyhow::anyhow!("invalid tag"))?;
+        .map_err(|_| anyhow::anyhow!("标签无效"))?;
     // Authentication failure must wipe any partially decrypted data too.
     let mut password = Zeroizing::new(blob[end + 12..blob.len() - 16].to_vec());
     cipher
@@ -219,12 +215,8 @@ where
             password.as_mut_slice().into(),
             &tag,
         )
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "credential unavailable: account password changed, wrong TPM, or corrupt record"
-            )
-        })?;
-    ensure!(password.last() == Some(&0), "invalid credential terminator");
+        .map_err(|_| anyhow::anyhow!("凭据不可用：账户密码已更改、TPM 不正确或记录已损坏"))?;
+    ensure!(password.last() == Some(&0), "凭据终止符无效");
     validate_password(&password[..password.len() - 1])?;
     Ok(password)
 }
@@ -232,17 +224,17 @@ where
 /// Verify every path component before accessing credential contents. The private directory
 /// has no unprivileged writers, so subsequent opens/renames cannot be raced by a user.
 fn check_directory(path: &Path, owner: u32) -> anyhow::Result<()> {
-    ensure!(path.is_absolute(), "credential directory must be absolute");
+    ensure!(path.is_absolute(), "凭据目录必须是绝对路径");
     for ancestor in path.ancestors() {
         let meta = std::fs::symlink_metadata(ancestor)?;
         ensure!(
             meta.is_dir() && meta.uid() == owner && meta.mode() & 0o022 == 0,
-            "credential directory has unsafe ownership, permissions, or a symlink"
+            "凭据目录的所有权、权限或符号链接不安全"
         );
     }
     ensure!(
         std::fs::metadata(path)?.mode() & 0o077 == 0,
-        "credential directory must be private"
+        "凭据目录必须为私有目录"
     );
     Ok(())
 }
@@ -265,17 +257,17 @@ fn read_record(path: &Path, owner: u32) -> anyhow::Result<Option<Vec<u8>>> {
     let meta = file.metadata()?;
     ensure!(
         meta.is_file() && meta.uid() == owner && meta.mode() & 0o077 == 0 && meta.nlink() == 1,
-        "credential record has unsafe ownership, permissions, or type"
+        "凭据记录的所有权、权限或类型不安全"
     );
     let mut blob = Vec::new();
     file.take((MAX_BLOB + 1) as u64).read_to_end(&mut blob)?;
-    ensure!(blob.len() <= MAX_BLOB, "credential record is too large");
+    ensure!(blob.len() <= MAX_BLOB, "凭据记录过大");
     Ok(Some(blob))
 }
 
 fn write_record(dir: &Path, account: &Account, blob: &[u8]) -> anyhow::Result<()> {
     let mut random = [0; 8];
-    getrandom::fill(&mut random).map_err(|_| anyhow::anyhow!("random filename unavailable"))?;
+    getrandom::fill(&mut random).map_err(|_| anyhow::anyhow!("无法生成随机文件名"))?;
     let tmp = dir.join(format!(
         ".{}-{}.tmp",
         account.uid,
@@ -317,7 +309,7 @@ pub fn enroll_for(backend: Backend, username: &str, password: &[u8]) -> anyhow::
     validate_password(password)?;
     let dir = Path::new(backend.store_dir());
     // /var/lib/gaze is provisioned by gazed's StateDirectory; do not create arbitrary parents.
-    check_directory(dir.parent().context("missing parent")?, 0)?;
+    check_directory(dir.parent().context("缺少父目录")?, 0)?;
     match std::fs::DirBuilder::new().mode(0o700).create(dir) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -325,14 +317,14 @@ pub fn enroll_for(backend: Backend, username: &str, password: &[u8]) -> anyhow::
     }
     check_directory(dir, 0)?;
     let mut key = Zeroizing::new([0; 32]);
-    getrandom::fill(key.as_mut()).map_err(|_| anyhow::anyhow!("random key unavailable"))?;
+    getrandom::fill(key.as_mut()).map_err(|_| anyhow::anyhow!("无法生成随机密钥"))?;
     let (public, private) = crate::tpm::seal(&key)?;
     let blob = encrypt(&key, &account, password, &public, &private)?;
     // Verify sealing before replacing a working record; a failed setup leaves it intact.
     let _check = decrypt_with(&blob, &account, crate::tpm::unseal)?;
     ensure!(
         backend.account(username)?.binding == account.binding,
-        "account changed during enrollment; retry"
+        "录入期间账户发生变化；请重试"
     );
     write_record(dir, &account, &blob)
 }
@@ -359,10 +351,7 @@ pub fn load(username: &str) -> anyhow::Result<Option<Secret>> {
 }
 
 pub fn load_for(backend: Backend, username: &str) -> anyhow::Result<Option<Secret>> {
-    ensure!(
-        unsafe { libc::geteuid() } == 0,
-        "keyring access requires root"
-    );
+    ensure!(unsafe { libc::geteuid() } == 0, "访问钥匙环需要 root 权限");
     let dir = Path::new(backend.store_dir());
     if !dir.try_exists()? {
         return Ok(None);
@@ -375,7 +364,7 @@ pub fn load_for(backend: Backend, username: &str) -> anyhow::Result<Option<Secre
     let secret = decrypt_with(&blob, &account, crate::tpm::unseal)?;
     ensure!(
         backend.account(username)?.binding == account.binding,
-        "account changed during unlock"
+        "解锁期间账户发生变化"
     );
     Ok(Some(secret))
 }
@@ -575,7 +564,7 @@ mod tests {
 
     #[test]
     fn backends_have_distinct_names_dirs_and_bindings() {
-        assert_eq!(Backend::Gnome.name(), "GNOME Keyring");
+        assert_eq!(Backend::Gnome.name(), "GNOME 钥匙环");
         assert_eq!(Backend::KWallet.name(), "KWallet");
         assert_eq!(Backend::Gnome.store_dir(), STORE_DIR);
         assert_eq!(Backend::KWallet.store_dir(), KWALLET_STORE_DIR);

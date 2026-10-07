@@ -5,12 +5,12 @@
 <component type="desktop-application">
   <id>com.gundulabs.Gaze</id>
   <name>Gaze</name>
-  <summary>GTK4/Adwaita GUI for Gaze</summary>
+  <summary>Gaze 的 GTK4/Adwaita 图形界面</summary>
   <metadata_license>FSFAP</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <launchable type="desktop-id">com.gundulabs.Gaze.desktop</launchable>
   <description>
-    <p>GTK4/Adwaita GUI for Gaze with tools for enrollment, face profile management, and authentication checks.</p>
+    <p>Gaze 的 GTK4/Adwaita 图形界面，提供人脸录入、档案管理和认证检查工具。</p>
   </description>
   <url type="homepage">https://gaze.gundulabs.com</url>
   <developer_name>Gundu Labs</developer_name>

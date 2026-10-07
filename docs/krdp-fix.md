@@ -16,13 +16,13 @@
 在项目根目录执行：
 
 ```bash
-sudo dnf install ./dist/packages/x86_64/gaze-0.3.8-3.zh_rdp.fc44.x86_64.rpm
+sudo dnf install ./dist/packages/x86_64/gaze-0.3.8-1.fc44.x86_64.rpm
 ```
 
-包名仍为 `gaze`，发行号高于之前的 `2.zh_rdp`，可以直接升级。它包含：
+包名仍为 `gaze`，版本与发行号保持官方的 `0.3.8-1.fc44`。它包含：
 
 - 本项目编译的 `pam_gaze.so`（中文提示、KRDP 登录跳过人脸扫描）。
-- 从同版本基础 RPM 校验后保留的 Gaze 守护进程、CLI、其他文件；不是整个 Gaze 工作区的重新编译。
+- 从本项目源码编译的中文 Gaze 守护进程、CLI 和 PAM 模块；ONNX 运行库及其他支持文件取自校验后的同版本基础 RPM。
 - 私有 KRDP 修复库：`/usr/lib64/gaze-krdp-fix/6.7.5/libKRdp.so.6`。
 - 启动包装脚本：`/usr/libexec/gaze-krdp-server`。
 - 系统级用户服务配置：`/usr/lib/systemd/user/app-org.kde.krdpserver.service.d/90-gaze-krdp-fix.conf`。
@@ -59,6 +59,8 @@ systemctl --user restart app-org.kde.krdpserver.service
 
 ## 重新构建
 
+GUI 和桌面集成分别生成与官方同名的 RPM。完整构建还需要 `gtk4-devel libadwaita-devel opencv-devel gstreamer1-devel gstreamer1-plugins-base-devel clang-devel python3-pyyaml`。
+
 需要 Fedora 的 Rust、PAM 开发工具，以及 Qt/KDE、FreeRDP、KPipeWire 开发包。推荐依赖：
 
 ```bash
@@ -84,9 +86,10 @@ python3 scripts/build-krdp-fix.py --deps-root /path/to/unpacked-rpm-root
 ```bash
 python3 scripts/build-combined-rpm.py \
   --base-rpm target/base-rpms/gaze-0.3.8-1.fc44.x86_64.rpm
+python3 scripts/build-ui-rpms.py
 ```
 
-也可以传入官方 `gaze 0.3.8 x86_64` RPM。基础包的版本、架构和所有文件 SHA256 都会验证。脚本重新构建并测试 PAM；默认也重新构建/测试 KRDP。传入 `--reuse-krdp-build` 可复用项目内已通过测试且校验匹配的 KRDP 构建。
+也可以传入官方 `gaze 0.3.8 x86_64` RPM。基础包的版本、架构和所有文件 SHA256 都会验证。脚本重新构建守护进程、CLI、GUI 和两个 PAM 模块并测试 PAM；默认也重新构建/测试 KRDP。传入 `--reuse-krdp-build` 可复用项目内已通过测试且校验匹配的 KRDP 构建。
 
 ## 回退合并包
 

@@ -27,7 +27,7 @@ def run(*args, **kwargs):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--base-rpm', required=True, type=Path, help='Official or previously built gaze x86_64 RPM matching Cargo.toml')
-    parser.add_argument('--release', default='3.zh_rdp')
+    parser.add_argument('--release', default='1')
     parser.add_argument('--reuse-krdp-build', action='store_true', help='Use the tested target/krdp-fix artifact, checking its build manifest')
     parser.add_argument('--deps-root', type=Path)
     args = parser.parse_args()
@@ -40,7 +40,9 @@ def main():
     if output('rpm', '-qp', '--qf', '%{FILEDIGESTALGO}', base) != '8':
         raise SystemExit('Base RPM must use SHA256 payload digests')
     run('rpm', '-K', base)
-    run('cargo', 'build', '--release', '--locked', '-p', 'pam-gaze', cwd=ROOT)
+    run('cargo', 'build', '--release', '--locked', '-p', 'gazed', cwd=ROOT)
+    run('cargo', 'build', '--release', '--locked', '-p', 'gaze-cli', '-p', 'gaze-gui',
+        '-p', 'pam-gaze', '-p', 'pam-gaze-grosshack', cwd=ROOT)
     run('cargo', 'test', '--locked', '-p', 'pam-gaze', cwd=ROOT)
     run(ROOT / 'scripts/check-pam-link.sh', ROOT / 'target/release/libpam_gaze.so')
     if not args.reuse_krdp_build:
@@ -90,6 +92,10 @@ def main():
         dest.chmod(mode)
         return dest
 
+    stage(ROOT / 'target/release/gazed', '/usr/bin/gazed', 0o755)
+    stage(ROOT / 'target/release/gaze', '/usr/bin/gaze', 0o755)
+    stage(ROOT / 'target/release/libpam_gaze_grosshack.so', '/usr/lib64/security/pam_gaze_grosshack.so', 0o755)
+    stage(ROOT / 'packaging/config/com.gundulabs.gaze.policy', '/usr/share/polkit-1/actions/com.gundulabs.gaze.policy')
     stage(ROOT / 'target/release/libpam_gaze.so', '/usr/lib64/security/pam_gaze.so', 0o755)
     stage(ROOT / 'packaging/config/config.toml', '/etc/gaze/config.toml')
     stage(ROOT / 'packaging/config/com.gundulabs.Gaze.conf', '/etc/dbus-1/system.d/com.gundulabs.Gaze.conf')
@@ -133,9 +139,9 @@ Requires(posttrans): systemd
 Requires(postun): systemd
 ''' + ''.join('Requires: ' + r + '\n' for r in sorted(requirements)) + '''
 %description
-Gaze with Chinese PAM prompts and the KRDP network-login fix.
-The PAM module and a private KRDP library are rebuilt from this project;
-other Gaze components retain the checksum-verified base RPM payload.
+Gaze with Chinese interfaces and the KRDP network-login fix.
+The daemon, CLI, PAM modules and private KRDP library are rebuilt from this
+project. Runtime libraries and support files use the verified base RPM payload.
 The KRDP service wrapper enables the private repair only for its supported
 Fedora KRDP build, without replacing the distribution's system library.
 Windows App Android users should disable hardware decoding in the client.
@@ -168,6 +174,9 @@ cp -a "%{_topdir}/payload/." %{buildroot}/
     (packages / (rpm.name + '.build.json')).write_text(json.dumps({
         'base_rpm': base.name, 'base_sha256': hashlib.sha256(base.read_bytes()).hexdigest(),
         'gaze_source_commit': output('git', '-C', ROOT, 'rev-parse', 'HEAD'),
+        'source_diff_sha256': hashlib.sha256(subprocess.check_output(['git', '-C', str(ROOT), 'diff', 'HEAD'])).hexdigest(),
+        'binaries_sha256': {name: hashlib.sha256((ROOT / 'target/release' / name).read_bytes()).hexdigest()
+                            for name in ['gazed', 'gaze', 'libpam_gaze.so', 'libpam_gaze_grosshack.so']},
         'krdp_build': build_info, 'spec': str(spec_path.relative_to(ROOT)),
         'validation': 'PAM tests, KRDP tests, RPM digests, dependencies passed',
     }, indent=2) + '\n')
