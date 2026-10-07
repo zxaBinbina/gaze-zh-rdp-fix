@@ -18,6 +18,18 @@
 
 补丁仅在 PAM 服务为 `login` 且实际运行的可执行文件路径为 `/usr/bin/krdpserver` 时，让 Gaze 返回 `PAM_IGNORE`。之后继续由原 PAM 密码与账户栈判定登录结果；补丁本身不会直接授予登录权限。本地控制台、锁屏、sudo 等仍走各自原有认证流程。
 
+## Gaze 与 KRDP 合并 RPM
+
+已加入 KRDP 6.7.5 的画面冻结修复、源码、补丁和回归测试，并提供合并 RPM 构建脚本。
+
+```bash
+sudo dnf install ./dist/packages/x86_64/gaze-0.3.7-3.zh_rdp.fc44.x86_64.rpm
+```
+
+Windows App Android 客户端还需**关闭硬件解码**，避免光标/点击偏移。服务端修复处理约 4 秒后画面冻结的问题，两者经过分别回退验证。
+
+详细文件位置、构建、安装和回退方法见 [KRDP 合并修复说明](docs/krdp-fix.md)。
+
 ## 文件
 
 | 文件 | 说明 |

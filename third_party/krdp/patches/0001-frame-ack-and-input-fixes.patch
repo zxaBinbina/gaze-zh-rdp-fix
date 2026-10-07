@@ -1,0 +1,285 @@
+--- a/src/VideoStream.cpp
++++ b/src/VideoStream.cpp
+@@ -8,6 +8,7 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
+ #include "VideoStream.h"
++#include "FrameAcknowledgement.h"
+ 
+ #include <algorithm>
+ #include <condition_variable>
+@@ -41,7 +42,7 @@
+ constexpr uint32_t ProgressiveCodecContextId = 1;
+ struct RdpCapsInformation {
+     uint32_t version;
+-    RDPGFX_CAPSET capSet;
++    RDPGFX_CAPSET capSet = {};
+     bool avcSupported : 1 = false;
+     bool yuv420Supported : 1 = false;
+ };
+@@ -136,6 +137,7 @@
+     QSize size;
+ 
+     bool pendingReset = true;
++    bool needsFullRefresh = true;
+     bool enabled = false;
+     bool streamingEnabled = false;
+     bool capsConfirmed = false;
+@@ -146,6 +148,7 @@
+ 
+     QQueue<VideoFrame> frameQueue;
+     QSet<uint32_t> pendingFrames;
++    bool acknowledgementsSuspended = false;
+ 
+     std::mutex pendingFramesMutex;
+ 
+@@ -574,7 +577,9 @@
+         qCDebug(KRDP) << " " << capVersionToString(caps.version) << "flags:" << Qt::hex << set.flags << Qt::dec << "AVC:" << caps.avcSupported
+                       << "YUV420:" << caps.yuv420Supported;
+ 
+-        capsInformation.push_back(caps);
++        if (caps.version <= RDPGFX_CAPVERSION_107) {
++            capsInformation.push_back(caps);
++        }
+     }
+ 
+     const bool supportsProgresive = !capsInformation.empty();
+@@ -606,7 +611,7 @@
+ 
+     qCDebug(KRDP) << "Selected caps:" << capVersionToString(maxVersion->version);
+ 
+-    RDPGFX_CAPS_CONFIRM_PDU capsConfirmPdu;
++    RDPGFX_CAPS_CONFIRM_PDU capsConfirmPdu = {};
+     capsConfirmPdu.capsSet = &(maxVersion->capSet);
+     const UINT status = d->gfxContext->CapsConfirm(d->gfxContext.get(), &capsConfirmPdu);
+     if (status != CHANNEL_RC_OK) {
+@@ -621,19 +626,13 @@
+ 
+ uint32_t VideoStream::onFrameAcknowledge(const RDPGFX_FRAME_ACKNOWLEDGE_PDU *frameAcknowledge)
+ {
+-    auto id = frameAcknowledge->frameId;
+-
+     std::lock_guard lock(d->pendingFramesMutex);
+-
+-    auto itr = d->pendingFrames.constFind(id);
+-    if (itr == d->pendingFrames.cend()) {
+-        qCWarning(KRDP) << "Got frame acknowledge for an unknown frame";
+-        return CHANNEL_RC_OK;
++    acknowledgeFrames(d->pendingFrames, d->acknowledgementsSuspended,
++                      frameAcknowledge->frameId, frameAcknowledge->queueDepth);
++    if (d->acknowledgementsSuspended) {
++        qCInfo(KRDP) << "Client suspended frame acknowledgements; continuing video delivery";
+     }
+-
+-    d->frameDelay = d->encodedFrames - frameAcknowledge->totalFramesDecoded;
+-    d->pendingFrames.erase(itr);
+-
++    d->frameDelay = std::max(0, int(d->encodedFrames.load() - frameAcknowledge->totalFramesDecoded));
+     return CHANNEL_RC_OK;
+ }
+ 
+@@ -725,6 +724,8 @@
+ 
+ void VideoStream::performReset(QSize size)
+ {
++    d->needsFullRefresh = true;
++    qCInfo(KRDP) << "Reset graphics size" << size << "origin" << QPoint(0, 0);
+     if (!d->gfxContext) {
+         auto settings = d->session->rdpPeerContext()->settings;
+         freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, size.width());
+@@ -736,16 +737,16 @@
+ 
+     destroySurface();
+ 
+-    RDPGFX_RESET_GRAPHICS_PDU resetGraphicsPdu;
++    RDPGFX_RESET_GRAPHICS_PDU resetGraphicsPdu = {};
+     resetGraphicsPdu.width = size.width();
+     resetGraphicsPdu.height = size.height();
+     resetGraphicsPdu.monitorCount = 1;
+ 
+     MONITOR_DEF monitor = {};
+     monitor.left = 0;
+-    monitor.right = size.width();
++    monitor.right = size.width() - 1;
+     monitor.top = 0;
+-    monitor.bottom = size.height();
++    monitor.bottom = size.height() - 1;
+     monitor.flags = MONITOR_PRIMARY;
+     resetGraphicsPdu.monitorDefArray = &monitor;
+     UINT status = d->gfxContext->ResetGraphics(d->gfxContext.get(), &resetGraphicsPdu);
+@@ -754,7 +755,7 @@
+         return;
+     }
+ 
+-    RDPGFX_CREATE_SURFACE_PDU createSurfacePdu;
++    RDPGFX_CREATE_SURFACE_PDU createSurfacePdu = {};
+     createSurfacePdu.width = size.width();
+     createSurfacePdu.height = size.height();
+     uint16_t surfaceId = d->nextSurfaceId++;
+@@ -780,7 +781,7 @@
+         }
+     }
+ 
+-    RDPGFX_MAP_SURFACE_TO_OUTPUT_PDU mapSurfaceToOutputPdu;
++    RDPGFX_MAP_SURFACE_TO_OUTPUT_PDU mapSurfaceToOutputPdu = {};
+     mapSurfaceToOutputPdu.outputOriginX = 0;
+     mapSurfaceToOutputPdu.outputOriginY = 0;
+     mapSurfaceToOutputPdu.surfaceId = surfaceId;
+@@ -795,7 +796,7 @@
+ bool VideoStream::hasInFlightCapacity() const
+ {
+     std::lock_guard lock(d->pendingFramesMutex);
+-    return d->pendingFrames.size() < MaximumInFlightFrames;
++    return d->acknowledgementsSuspended || d->pendingFrames.size() < MaximumInFlightFrames;
+ }
+ 
+ void VideoStream::sendFrame(const VideoFrame &frame)
+@@ -843,11 +844,11 @@
+ 
+     {
+         std::lock_guard lock(d->pendingFramesMutex);
+-        d->pendingFrames.insert(frameId);
++        if (!d->acknowledgementsSuspended) { d->pendingFrames.insert(frameId); }
+     }
+ 
+-    RDPGFX_START_FRAME_PDU startFramePdu;
+-    RDPGFX_END_FRAME_PDU endFramePdu;
++    RDPGFX_START_FRAME_PDU startFramePdu = {};
++    RDPGFX_END_FRAME_PDU endFramePdu = {};
+ 
+     auto now = QDateTime::currentDateTimeUtc().time();
+     startFramePdu.timestamp = now.hour() << 22 | now.minute() << 16 | now.second() << 10 | now.msec();
+@@ -855,7 +856,7 @@
+     startFramePdu.frameId = frameId;
+     endFramePdu.frameId = frameId;
+ 
+-    RDPGFX_SURFACE_COMMAND surfaceCommand;
++    RDPGFX_SURFACE_COMMAND surfaceCommand = {};
+     surfaceCommand.surfaceId = d->surface.id;
+     surfaceCommand.codecId = RDPGFX_CODECID_AVC420;
+     surfaceCommand.contextId = 0;
+@@ -869,7 +870,7 @@
+     surfaceCommand.length = 0;
+     surfaceCommand.data = nullptr;
+ 
+-    RDPGFX_AVC420_BITMAP_STREAM avcStream;
++    RDPGFX_AVC420_BITMAP_STREAM avcStream = {};
+     surfaceCommand.extra = &avcStream;
+ 
+     avcStream.data = (BYTE *)frame.data.data();
+@@ -922,7 +923,7 @@
+ 
+     QImage image = frame.image.convertToFormat(QImage::Format_RGB32);
+     const QRect frameRect(QPoint(0, 0), image.size());
+-    auto invalidRegion = toRegion16(frame.damage, frameRect);
++    auto invalidRegion = toRegion16(d->needsFullRefresh ? QRegion(frameRect) : frame.damage, frameRect);
+     if (!invalidRegion) {
+         qCWarning(KRDP) << "Failed to build invalid region for progressive frame";
+         return;
+@@ -956,11 +957,11 @@
+ 
+     {
+         std::lock_guard lock(d->pendingFramesMutex);
+-        d->pendingFrames.insert(frameId);
++        if (!d->acknowledgementsSuspended) { d->pendingFrames.insert(frameId); }
+     }
+ 
+-    RDPGFX_START_FRAME_PDU startFramePdu;
+-    RDPGFX_END_FRAME_PDU endFramePdu;
++    RDPGFX_START_FRAME_PDU startFramePdu = {};
++    RDPGFX_END_FRAME_PDU endFramePdu = {};
+ 
+     auto now = QDateTime::currentDateTimeUtc().time();
+     startFramePdu.timestamp = now.hour() << 22 | now.minute() << 16 | now.second() << 10 | now.msec();
+@@ -970,7 +971,7 @@
+ 
+     const RECTANGLE_16 *extents = region16_extents(&*invalidRegion);
+ 
+-    RDPGFX_SURFACE_COMMAND surfaceCommand;
++    RDPGFX_SURFACE_COMMAND surfaceCommand = {};
+     surfaceCommand.surfaceId = d->surface.id;
+     surfaceCommand.codecId = RDPGFX_CODECID_CAPROGRESSIVE;
+     surfaceCommand.contextId = d->surface.codecContextId;
+@@ -991,6 +992,7 @@
+                         << "damageRects" << rectCount;
+     }
+ 
++    if (status == CHANNEL_RC_OK) { d->needsFullRefresh = false; }
+     d->session->networkDetection()->stopBandwidthMeasure();
+     region16_uninit(&*invalidRegion);
+ }
+--- a/src/RdpConnection.cpp
++++ b/src/RdpConnection.cpp
+@@ -560,6 +560,10 @@
+ 
+ bool RdpConnection::onClose()
+ {
++    if (QThread::currentThread() != thread()) {
++        QMetaObject::invokeMethod(this, [this]() { onClose(); }, Qt::QueuedConnection);
++        return true;
++    }
+     d->clipboard->close();
+     d->videoStream->close();
+     setState(State::Closed);
+--- a/src/PortalSession.cpp
++++ b/src/PortalSession.cpp
+@@ -169,6 +169,15 @@
+         return;
+     }
+ 
++    auto movePointer = [this](const QPointF &position) {
++        if (size().isEmpty() || logicalSize().isEmpty()) {
++            return;
++        }
++        const QPointF logicalPosition{position.x() * logicalSize().width() / size().width(),
++                                      position.y() * logicalSize().height() / size().height()};
++        d->remoteInterface->NotifyPointerMotionAbsolute(d->sessionPath, QVariantMap{}, nodeId(), logicalPosition.x(), logicalPosition.y());
++    };
++
+     switch (event->type()) {
+     case QEvent::MouseButtonPress:
+     case QEvent::MouseButtonRelease: {
+@@ -184,15 +193,16 @@
+             qCWarning(KRDP) << "Unsupported mouse button" << me->button();
+             return;
+         }
++        // Absolute RDP button events carry their own position. Touch clients
++        // need not send a preceding PTR_FLAGS_MOVE event.
++        movePointer(me->position());
+         uint state = me->type() == QEvent::MouseButtonPress ? 1 : 0;
+         d->remoteInterface->NotifyPointerButton(d->sessionPath, QVariantMap{}, button, state);
+         break;
+     }
+     case QEvent::MouseMove: {
+         auto me = std::static_pointer_cast<QMouseEvent>(event);
+-        auto position = me->position();
+-        auto logicalPosition = QPointF{(position.x() / size().width()) * logicalSize().width(), (position.y() / size().height()) * logicalSize().height()};
+-        d->remoteInterface->NotifyPointerMotionAbsolute(d->sessionPath, QVariantMap{}, nodeId(), logicalPosition.x(), logicalPosition.y());
++        movePointer(me->position());
+         break;
+     }
+     case QEvent::Wheel: {
+--- /dev/null
++++ b/src/FrameAcknowledgement.h
+@@ -0,0 +1,21 @@
++#pragma once
++#include <QSet>
++#include <cstdint>
++#include <limits>
++
++inline void acknowledgeFrames(QSet<uint32_t> &pending, bool &suspended, uint32_t id, uint32_t queueDepth)
++{
++    suspended = queueDepth == std::numeric_limits<uint32_t>::max();
++    if (suspended) {
++        pending.clear();
++        return;
++    }
++    for (auto it = pending.begin(); it != pending.end();) {
++        // RFC1982-style serial comparison, valid for a window smaller than 2^31.
++        if (uint32_t(id - *it) < 0x80000000u) {
++            it = pending.erase(it);
++        } else {
++            ++it;
++        }
++    }
++}

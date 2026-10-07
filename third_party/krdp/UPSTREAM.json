@@ -1,0 +1,12 @@
+{
+  "repository": "https://invent.kde.org/plasma/krdp",
+  "tag": "v6.7.5",
+  "archive": "krdp-6.7.5.tar.gz",
+  "archive_url": "https://codeload.github.com/KDE/krdp/tar.gz/refs/tags/v6.7.5",
+  "sha256": "292719236740966f048ac7c06041cc282368cd16e1da957327169fcacf18f60f",
+  "supported_rpm": "6.7.5-1.fc44.x86_64",
+  "system_library_sha256": "ed2d18b18dca17339fdd9244ac7d143b75b3eeb253a87282d9adbbb0bb66ac00",
+  "patches": [
+    "patches/0001-frame-ack-and-input-fixes.patch"
+  ]
+}

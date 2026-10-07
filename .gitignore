@@ -29,3 +29,7 @@ docs/archive/
 result
 result-*
 references/
+
+# Python build helpers
+__pycache__/
+*.py[cod]

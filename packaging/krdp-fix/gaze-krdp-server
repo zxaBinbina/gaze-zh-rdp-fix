@@ -1,0 +1,14 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# This wrapper is used only by the KRDP service; the distro library stays intact.
+set -eu
+unset LD_LIBRARY_PATH KRDP_DISABLE_H264 KPIPEWIRE_FORCE_ENCODER
+export WLOG_LEVEL=WARN
+export QT_LOGGING_RULES='*.debug=false'
+package=$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' krdp 2>/dev/null || true)
+if [ "$package" = '6.7.5-1.fc44.x86_64' ]; then
+    export LD_LIBRARY_PATH=/usr/lib64/gaze-krdp-fix/6.7.5
+else
+    printf 'Gaze KRDP repair does not match installed KRDP (%s); using the system library.\n' "$package" >&2
+fi
+exec /usr/bin/krdpserver "$@"
