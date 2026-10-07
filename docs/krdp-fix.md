@@ -79,7 +79,7 @@ python3 scripts/build-krdp-fix.py
 python3 scripts/build-krdp-fix.py --deps-root /path/to/unpacked-rpm-root
 ```
 
-该目录包含 `usr/include` 和协议文件等；运行库仍使用本机系统库。本次构建保存的临时开发头文件位于项目 `target/krdp-deps`，脚本发现它后会自动使用；新机器仍需准备依赖。
+该目录包含 `usr/include` 和协议文件等；运行库仍使用本机系统库。若项目中存在 `target/krdp-deps`，脚本会自动使用。构建缓存已清理，重新构建前需准备依赖及同版本的官方基础 RPM。
 
 使用同版本的官方 Gaze RPM 作为经过校验的基础载荷：
 
@@ -92,10 +92,6 @@ python3 scripts/build-combined-rpm.py \
 
 ## 回退合并包
 
-之前的 PAM 修复包仍位于 `dist/packages/x86_64/`。可通过以下命令回退为仅含 Gaze PAM 修复的版本：
-
-```bash
-sudo dnf downgrade ./dist/packages/x86_64/gaze-0.3.7-2.zh_rdp.fc44.x86_64.rpm
-```
+项目目录仅保留最新集成 RPM，旧安装包已清理。需要回退时，请先从备份取得旧包，或检出对应历史源码重新构建。
 
 若存在此前会话遗留的用户级 `zz-stream-stability.conf`，它可能重新加载旧用户目录修复库；完全回退 KRDP 时应将这份文件移出 `.service.d` 目录，再执行用户级 `daemon-reload` 和 `restart`。用户级文件不会由 RPM 擅自删除。

@@ -172,10 +172,8 @@ impl Report {
         let warnings = self.count(Level::Warning);
         let errors = self.count(Level::Error);
         term.write_line(&format!(
-            "\n{} {passed} 项通过，{off} 项关闭，{warnings} 项警告{}，{errors} 项错误{}",
-            style("汇总：").bold(),
-            if warnings == 1 { "" } else { "" },
-            if errors == 1 { "" } else { "" }
+            "\n{} {passed} 项通过，{off} 项关闭，{warnings} 项警告，{errors} 项错误",
+            style("汇总：").bold()
         ))?;
         if off > 0 {
             term.write_line(

@@ -758,7 +758,8 @@ pub unsafe fn do_authenticate(pamh: PamHandle, flags: c_int, options: PamOptions
     if face_auth_out_of_scope(
         service.as_deref(),
         unsafe { get_pam_rhost(pamh) }.as_deref(),
-    ) || is_krdp_network_login(service.as_deref(), std::env::current_exe().ok().as_deref()) {
+    ) || is_krdp_network_login(service.as_deref(), std::env::current_exe().ok().as_deref())
+    {
         return PAM_IGNORE;
     }
     let result = unsafe { authenticate_face(pamh, flags, options) };

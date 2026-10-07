@@ -80,15 +80,16 @@
      }
  
      #[test]
-@@ -1605,10 +1605,10 @@
+@@ -1604,11 +1604,8 @@
+             None,
          ] {
              let message = give_up_message(status);
-             assert!(
+-            assert!(
 -                !message.starts_with("Please look at the camera"),
-+                !message.starts_with("请看摄像头"),
-                 "{status:?}"
-             );
+-                "{status:?}"
+-            );
 -            assert!(message.contains("password"), "{status:?}");
++            assert!(!message.starts_with("请看摄像头"), "{status:?}");
 +            assert!(message.contains("密码"), "{status:?}");
          }
      }

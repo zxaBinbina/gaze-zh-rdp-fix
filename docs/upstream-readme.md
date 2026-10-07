@@ -3,14 +3,14 @@
 
 <div align="center">
 
-<img src="packaging/gui/com.gundulabs.Gaze.svg" alt="Gaze icon" width="120" />
+<img src="../packaging/gui/com.gundulabs.Gaze.svg" alt="Gaze icon" width="120" />
 
 # Gaze
 
 **Facial authentication for Linux**
 
 [![CI](https://github.com/gundulabs/gaze/actions/workflows/ci.yml/badge.svg)](https://github.com/gundulabs/gaze/actions/workflows/ci.yml)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://github.com/GunduLabs/gaze/blob/v0.3.8/LICENSE)
 
 [Documentation](https://gaze.gundulabs.com) · [Install](https://gaze.gundulabs.com/guide/installation) · [Development](https://gaze.gundulabs.com/guide/development)
 
@@ -310,7 +310,7 @@ The root `Cargo.toml`, `Justfile`, and `flake.nix` coordinate the workspace.
 
 ## License
 
-Gaze is free software licensed under the [GNU General Public License, version 3 or later](LICENSE) (`GPL-3.0-or-later`).
+Gaze is free software licensed under the [GNU General Public License, version 3 or later](https://github.com/GunduLabs/gaze/blob/v0.3.8/LICENSE) (`GPL-3.0-or-later`).
 
 ```
 Gaze - Facial authentication for Linux

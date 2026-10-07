@@ -649,6 +649,8 @@ jobs:
             dist/packages/copr-target.env
 
   dispatch-packages:
+    # The upstream package repository requires credentials unavailable in forks.
+    if: ${{ github.repository == 'GunduLabs/gaze' }}
     name: Dispatch packages to self-hosted repo
     runs-on: ubuntu-latest
     needs: [build-packages, build-flatpak, build-srpm]

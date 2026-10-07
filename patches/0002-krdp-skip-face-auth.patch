@@ -1,6 +1,6 @@
 --- a/crates/pam-gaze/src/auth.rs
 +++ b/crates/pam-gaze/src/auth.rs
-@@ -754,10 +754,11 @@
+@@ -754,10 +754,12 @@
  }
  
  pub unsafe fn do_authenticate(pamh: PamHandle, flags: c_int, options: PamOptions) -> c_int {
@@ -10,7 +10,8 @@
 +        service.as_deref(),
          unsafe { get_pam_rhost(pamh) }.as_deref(),
 -    ) {
-+    ) || is_krdp_network_login(service.as_deref(), std::env::current_exe().ok().as_deref()) {
++    ) || is_krdp_network_login(service.as_deref(), std::env::current_exe().ok().as_deref())
++    {
          return PAM_IGNORE;
      }
      let result = unsafe { authenticate_face(pamh, flags, options) };

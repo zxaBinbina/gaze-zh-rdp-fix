@@ -3,8 +3,7 @@
 
 use crate::capture_dialog;
 use gaze_core::config::{
-    AuthConfig, CameraConfig, Config, DEFAULT_RGB_CAMERA, HYBRID_POLICY_LABELS,
-      InferenceConfig,
+    AuthConfig, CameraConfig, Config, DEFAULT_RGB_CAMERA, HYBRID_POLICY_LABELS, InferenceConfig,
     MAX_ENROLLMENT_FACE_SIZE_RATIO, MAX_IR_FRAME_DIMENSION, MAX_LIVENESS_MAX_SECONDS,
     MIN_ENROLLMENT_FACE_SIZE_RATIO, MIN_LIVENESS_MAX_SECONDS, MODEL_QUALITY_LABELS,
     PARALLEL_CAPTURE_LABELS, SECURITY_LEVEL_LABELS, START_DELAY_SCOPE_LABELS, SecurityLevel,
@@ -1949,11 +1948,7 @@ pub fn build_window(app: &libadwaita::Application, username: &str) {
                                 for (face_name, count, has_rgb, has_ir) in faces {
                                     let row = libadwaita::ActionRow::new();
                                     row.set_title(&face_name);
-                                    row.set_subtitle(&format!(
-                                        "{} 组采集{}",
-                                        count,
-                                        if count == 1 { "" } else { "" }
-                                    ));
+                                    row.set_subtitle(&format!("{count} 组采集"));
 
                                     let rgb_badge = gtk4::Label::new(Some("RGB"));
                                     rgb_badge.set_valign(gtk4::Align::Center);
@@ -2477,8 +2472,11 @@ mod tests {
             .build();
         app.register(None::<&gtk4::gio::Cancellable>).unwrap();
         build_window(&app, "测试用户");
-        let parent = app.active_window().unwrap()
-            .downcast::<libadwaita::ApplicationWindow>().unwrap();
+        let parent = app
+            .active_window()
+            .unwrap()
+            .downcast::<libadwaita::ApplicationWindow>()
+            .unwrap();
         let directory = std::path::PathBuf::from(std::env::var("GAZE_GUI_SNAPSHOT_DIR").unwrap());
         std::fs::create_dir_all(&directory).unwrap();
         let settle = || {
@@ -2502,13 +2500,14 @@ mod tests {
         capture(parent.upcast_ref(), "main.png");
         show_config_dialog(&parent, &toast_overlay(&parent).unwrap());
         settle();
-        let settings = gtk4::Window::list_toplevels().into_iter()
+        let settings = gtk4::Window::list_toplevels()
+            .into_iter()
             .filter_map(|widget| widget.downcast::<gtk4::Window>().ok())
-            .find(|window| window.title().as_deref() == Some("配置")).unwrap();
+            .find(|window| window.title().as_deref() == Some("配置"))
+            .unwrap();
         capture(&settings, "settings.png");
         // This check only opens the locked settings window, and never changes values.
         settings.close();
         parent.close();
     }
-
 }

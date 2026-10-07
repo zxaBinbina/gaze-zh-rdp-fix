@@ -1649,10 +1649,7 @@ mod tests {
             None,
         ] {
             let message = give_up_message(status);
-            assert!(
-                !message.starts_with("请看摄像头"),
-                "{status:?}"
-            );
+            assert!(!message.starts_with("请看摄像头"), "{status:?}");
             assert!(message.contains("密码"), "{status:?}");
         }
     }

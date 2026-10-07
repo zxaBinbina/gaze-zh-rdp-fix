@@ -15,10 +15,10 @@ use dialoguer::{Confirm, Input, Select, theme::ColorfulTheme};
 use futures::StreamExt;
 use gaze_core::config::{
     AuthConfig, Config, DEFAULT_SECURITY_THRESHOLD, HYBRID_POLICY_LABELS,
-     MAX_ENROLLMENT_FACE_SIZE_RATIO, MAX_LIVENESS_MAX_SECONDS,
-    MAX_LIVENESS_THRESHOLD, MAX_SECURITY_THRESHOLD, MIN_ENROLLMENT_FACE_SIZE_RATIO,
-    MIN_LIVENESS_MAX_SECONDS, MIN_LIVENESS_THRESHOLD, MIN_SECURITY_THRESHOLD, MODEL_QUALITY_LABELS,
-    SECURITY_LEVEL_LABELS, START_DELAY_SCOPE_LABELS, SecurityLevel,
+    MAX_ENROLLMENT_FACE_SIZE_RATIO, MAX_LIVENESS_MAX_SECONDS, MAX_LIVENESS_THRESHOLD,
+    MAX_SECURITY_THRESHOLD, MIN_ENROLLMENT_FACE_SIZE_RATIO, MIN_LIVENESS_MAX_SECONDS,
+    MIN_LIVENESS_THRESHOLD, MIN_SECURITY_THRESHOLD, MODEL_QUALITY_LABELS, SECURITY_LEVEL_LABELS,
+    START_DELAY_SCOPE_LABELS, SecurityLevel,
 };
 use gaze_core::dbus::{
     CaptureStatus, EnrollPrompt, GazeProxy, VerifyResult, apply_config_to_daemon,
@@ -1187,22 +1187,20 @@ async fn handle_list_faces(proxy: &GazeProxy<'_>, user: &str) -> anyhow::Result<
                 write_no_faces(&term, user)?;
             } else {
                 term.write_line(&format!(
-                    "\n{} 个人脸{}，用户 {}：\n",
+                    "\n{} 个人脸，用户 {}：\n",
                     style(faces.len()).green().bold(),
-                    if faces.len() == 1 { "" } else { "" },
                     style(user).bold()
                 ))?;
                 for (face, count, has_rgb, has_ir) in faces {
                     let rgb_badge = spectrum_badge("RGB", has_rgb, rgb_configured);
                     let ir_badge = spectrum_badge("IR", has_ir, ir_configured);
                     term.write_line(&format!(
-                        "  {} {} {} {}（{} 组采集{}）",
+                        "  {} {} {} {}（{} 组采集）",
                         style("•").cyan(),
                         style(face).bold(),
                         rgb_badge,
                         ir_badge,
-                        count,
-                        if count == 1 { "" } else { "" }
+                        count
                     ))?;
                 }
                 term.write_line("")?;
