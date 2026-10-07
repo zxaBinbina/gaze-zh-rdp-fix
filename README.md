@@ -1,6 +1,6 @@
 # Gaze 中文 PAM 提示与 KRDP 登录修复
 
-基于 [gundulabs/gaze v0.3.7](https://github.com/gundulabs/gaze/tree/v0.3.7) 的源码分支，包含 PAM 认证提示汉化，以及 KDE 远程桌面登录时跳过本机人脸扫描的修复。
+基于 [gundulabs/gaze v0.3.8](https://github.com/gundulabs/gaze/tree/v0.3.8) 的源码分支，包含 PAM 认证提示汉化，以及 KDE 远程桌面登录时跳过本机人脸扫描的修复。
 
 本项目独立于远程桌面网页认证项目，可单独查看、构建或提取补丁。源代码已经应用下面两份补丁，不需要再次应用。
 
@@ -23,7 +23,7 @@
 已加入 KRDP 6.7.5 的画面冻结修复、源码、补丁和回归测试，并提供合并 RPM 构建脚本。
 
 ```bash
-sudo dnf install ./dist/packages/x86_64/gaze-0.3.7-3.zh_rdp.fc44.x86_64.rpm
+sudo dnf install ./dist/packages/x86_64/gaze-0.3.8-3.zh_rdp.fc44.x86_64.rpm
 ```
 
 Windows App Android 客户端还需**关闭硬件解码**，避免光标/点击偏移。服务端修复处理约 4 秒后画面冻结的问题，两者经过分别回退验证。
@@ -35,7 +35,7 @@ Windows App Android 客户端还需**关闭硬件解码**，避免光标/点击�
 | 文件 | 说明 |
 | --- | --- |
 | `crates/pam-gaze/src/auth.rs`、`crates/pam-gaze/src/core.rs` | 已应用汉化和修复的源文件 |
-| `patches/0001-zh-cn-pam.patch` | 相对上游 v0.3.7 的中文 PAM 提示补丁 |
+| `patches/0001-zh-cn-pam.patch` | 相对上游 v0.3.8 的中文 PAM 提示补丁 |
 | `patches/0002-krdp-skip-face-auth.patch` | 在第一份补丁之后应用的 KRDP 修复 |
 | `patches/series` | 补丁应用顺序 |
 | `UPSTREAM.json` | 上游地址、精确提交和许可证 |
@@ -60,7 +60,7 @@ cargo test --locked -p pam-gaze
 
 ## 安装到已经运行 Gaze 的主机
 
-以下针对 Fedora x86_64，假设已有兼容的 Gaze v0.3.7 和正常的 PAM 配置。PAM 属于登录组件，替换前请保留一个可用的管理员终端，并备份现有模块。示例不修改系统 PAM 策略，也不安装整套 Gaze。
+以下针对 Fedora x86_64，假设已有兼容的 Gaze v0.3.8 和正常的 PAM 配置。PAM 属于登录组件，替换前请保留一个可用的管理员终端，并备份现有模块。示例不修改系统 PAM 策略，也不安装整套 Gaze。
 
 ```bash
 gaze_backup_dir="/var/backups/gaze-zh-rdp-$(date +%Y%m%d-%H%M%S)"
@@ -76,7 +76,7 @@ sudo restorecon -F /usr/lib64/security/pam_gaze.so
 
 ## 将补丁应用到上游源码
 
-从上游检出 `UPSTREAM.json` 记录的精确提交（基于 v0.3.7），在该上游工作区中按顺序执行：
+从上游检出 `UPSTREAM.json` 记录的精确提交（基于 v0.3.8），在该上游工作区中按顺序执行：
 
 ```bash
 git apply /path/to/gaze-zh-rdp/patches/0001-zh-cn-pam.patch

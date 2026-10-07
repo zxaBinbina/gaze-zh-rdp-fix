@@ -16,7 +16,7 @@
 在项目根目录执行：
 
 ```bash
-sudo dnf install ./dist/packages/x86_64/gaze-0.3.7-3.zh_rdp.fc44.x86_64.rpm
+sudo dnf install ./dist/packages/x86_64/gaze-0.3.8-3.zh_rdp.fc44.x86_64.rpm
 ```
 
 包名仍为 `gaze`，发行号高于之前的 `2.zh_rdp`，可以直接升级。它包含：
@@ -79,14 +79,14 @@ python3 scripts/build-krdp-fix.py --deps-root /path/to/unpacked-rpm-root
 
 该目录包含 `usr/include` 和协议文件等；运行库仍使用本机系统库。本次构建保存的临时开发头文件位于项目 `target/krdp-deps`，脚本发现它后会自动使用；新机器仍需准备依赖。
 
-用原来已经生成的 Gaze RPM 作为经过校验的基础载荷：
+使用同版本的官方 Gaze RPM 作为经过校验的基础载荷：
 
 ```bash
 python3 scripts/build-combined-rpm.py \
-  --base-rpm dist/packages/x86_64/gaze-0.3.7-2.zh_rdp.fc44.x86_64.rpm
+  --base-rpm target/base-rpms/gaze-0.3.8-1.fc44.x86_64.rpm
 ```
 
-也可以传入官方 `gaze 0.3.7 x86_64` RPM。基础包的版本、架构和所有文件 SHA256 都会验证。脚本重新构建并测试 PAM；默认也重新构建/测试 KRDP。传入 `--reuse-krdp-build` 可复用项目内已通过测试且校验匹配的 KRDP 构建。
+也可以传入官方 `gaze 0.3.8 x86_64` RPM。基础包的版本、架构和所有文件 SHA256 都会验证。脚本重新构建并测试 PAM；默认也重新构建/测试 KRDP。传入 `--reuse-krdp-build` 可复用项目内已通过测试且校验匹配的 KRDP 构建。
 
 ## 回退合并包
 

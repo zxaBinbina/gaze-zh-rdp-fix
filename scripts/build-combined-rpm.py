@@ -26,7 +26,7 @@ def run(*args, **kwargs):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--base-rpm', required=True, type=Path, help='Official or previously built gaze 0.3.7 x86_64 RPM')
+    parser.add_argument('--base-rpm', required=True, type=Path, help='Official or previously built gaze x86_64 RPM matching Cargo.toml')
     parser.add_argument('--release', default='3.zh_rdp')
     parser.add_argument('--reuse-krdp-build', action='store_true', help='Use the tested target/krdp-fix artifact, checking its build manifest')
     parser.add_argument('--deps-root', type=Path)
