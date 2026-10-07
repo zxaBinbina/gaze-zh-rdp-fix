@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build one Fedora RPM containing Gaze PAM fixes and the private KRDP repair."""
+"""Build one Fedora RPM containing Chinese Gaze, GUI, KDE integration and KRDP repair."""
 import argparse
 import hashlib
 import json
@@ -99,6 +99,16 @@ def main():
     stage(ROOT / 'target/release/libpam_gaze.so', '/usr/lib64/security/pam_gaze.so', 0o755)
     stage(ROOT / 'packaging/config/config.toml', '/etc/gaze/config.toml')
     stage(ROOT / 'packaging/config/com.gundulabs.Gaze.conf', '/etc/dbus-1/system.d/com.gundulabs.Gaze.conf')
+    # Fold the GUI and KDE frontend into the main package.
+    for source, destination, mode in [
+        ('target/release/gaze-gui', '/usr/bin/gaze-gui', 0o755),
+        ('packaging/gui/com.gundulabs.Gaze.desktop', '/usr/share/applications/com.gundulabs.Gaze.desktop', 0o644),
+        ('packaging/gui/com.gundulabs.Gaze.svg', '/usr/share/icons/hicolor/scalable/apps/com.gundulabs.Gaze.svg', 0o644),
+        ('packaging/gui/com.gundulabs.Gaze.metainfo.xml', '/usr/share/metainfo/com.gundulabs.Gaze.metainfo.xml', 0o644),
+        ('integrations/kde/gaze-kde-pam', '/usr/bin/gaze-kde-pam', 0o755),
+        ('integrations/kde/gaze-face-unlock.desktop', '/usr/share/plasma/systemsettings/externalmodules/gaze-face-unlock.desktop', 0o644),
+    ]:
+        stage(ROOT / source, destination, mode)
     private = stage(library, '/usr/lib64/gaze-krdp-fix/6.7.5/libKRdp.so.6', 0o755)
     run('strip', '--strip-debug', private)
     stage(ROOT / 'packaging/krdp-fix/gaze-krdp-server', '/usr/libexec/gaze-krdp-server', 0o755)
@@ -119,29 +129,38 @@ def main():
         file_lines.append(f'{flags}%attr({stat.S_IMODE(p.lstat().st_mode):04o},root,root) {name}')
     requirements = {line for line in output('rpm', '-qpR', base).splitlines()
                     if not line.startswith(('rpmlib(', 'config(gaze)', 'gaze =', 'gaze(x86-64)'))}
-    requirements.add('krdp')
+    requirements.update(['krdp', 'gstreamer1-plugins-base', 'gstreamer1-plugins-good', 'pipewire-gstreamer'])
     hook = (ROOT / 'packaging/krdp-fix/refresh-user-services.sh').read_text().replace('%', '%%')
     post = (ROOT / 'packaging/postinst-rpm.sh').read_text().replace('%', '%%')
     preun = (ROOT / 'packaging/prerm-rpm.sh').read_text().replace('%', '%%')
+    kde_post = (ROOT / 'packaging/postinst-kde.sh').read_text().replace('%', '%%')
+    kde_postun = (ROOT / 'packaging/postrm-kde.sh').read_text().replace('%', '%%')
     spec = '''%global debug_package %{nil}
 %global __os_install_post %{nil}
 %global __provides_exclude_from ^/usr/lib(64)?/(gaze|gaze-krdp-fix)/.*$
 %global __requires_exclude ^libonnxruntime\\.so.*$
 Name: gaze
 Version: ''' + version + '\nRelease: ' + args.release + '''%{?dist}
-Summary: Gaze Chinese PAM and KRDP login, frame acknowledgement fixes
+Summary: Chinese Gaze with GUI, KDE integration and KRDP fixes
 License: GPL-3.0-or-later AND GPL-2.0-or-later AND BSD-2-Clause AND BSD-3-Clause AND LGPL-2.0-or-later AND (LGPL-2.1-only OR LGPL-3.0-only OR LicenseRef-KDE-Accepted-LGPL)
 URL: https://github.com/GunduLabs/gaze
 Vendor: Local gaze-zh-rdp-fix build
 BuildArch: x86_64
 Provides: bundled(krdp) = 6.7.5
+Provides: gaze-gui = %{version}-%{release}
+Provides: gaze-gui%{?_isa} = %{version}-%{release}
+Provides: gaze-kde = %{version}-%{release}
+Provides: gaze-kde%{?_isa} = %{version}-%{release}
+Obsoletes: gaze-gui <= %{version}-%{release}
+Obsoletes: gaze-kde <= %{version}-%{release}
 Requires(posttrans): systemd
 Requires(postun): systemd
 ''' + ''.join('Requires: ' + r + '\n' for r in sorted(requirements)) + '''
 %description
 Gaze with Chinese interfaces and the KRDP network-login fix.
-The daemon, CLI, PAM modules and private KRDP library are rebuilt from this
-project. Runtime libraries and support files use the verified base RPM payload.
+The daemon, CLI, GUI, PAM modules and private KRDP library are rebuilt from this
+project. KDE System Settings and lock screen integration are included.
+Runtime libraries and support files use the verified base RPM payload.
 The KRDP service wrapper enables the private repair only for its supported
 Fedora KRDP build, without replacing the distribution's system library.
 Windows App Android users should disable hardware decoding in the client.
@@ -153,7 +172,7 @@ mkdir -p %{buildroot}
 cp -a "%{_topdir}/payload/." %{buildroot}/
 
 %post
-''' + post + '\n%preun\n' + preun + '\n%posttrans\n' + hook + '\n%postun\nif [ "$1" -eq 0 ]; then\n' + hook + '\nfi\n\n%files\n' + '\n'.join(file_lines) + '\n'
+''' + post + '\n%preun\n' + preun + '\n%posttrans\n' + '(\n' + hook + '\n)\n(\n' + kde_post + '\n)\n%postun\n(\n' + kde_postun + '\n)\nif [ "$1" -eq 0 ]; then\n' + hook + '\nfi\n\n%files\n' + '\n'.join(file_lines) + '\n'
     spec_path = work / 'gaze-combined.spec'
     spec_path.write_text(spec)
     packages = ROOT / 'dist/packages'
@@ -176,7 +195,8 @@ cp -a "%{_topdir}/payload/." %{buildroot}/
         'gaze_source_commit': output('git', '-C', ROOT, 'rev-parse', 'HEAD'),
         'source_diff_sha256': hashlib.sha256(subprocess.check_output(['git', '-C', str(ROOT), 'diff', 'HEAD'])).hexdigest(),
         'binaries_sha256': {name: hashlib.sha256((ROOT / 'target/release' / name).read_bytes()).hexdigest()
-                            for name in ['gazed', 'gaze', 'libpam_gaze.so', 'libpam_gaze_grosshack.so']},
+                            for name in ['gazed', 'gaze', 'gaze-gui', 'libpam_gaze.so', 'libpam_gaze_grosshack.so']},
+        'components': ['daemon', 'cli', 'pam', 'gui', 'kde', 'krdp-fix'],
         'krdp_build': build_info, 'spec': str(spec_path.relative_to(ROOT)),
         'validation': 'PAM tests, KRDP tests, RPM digests, dependencies passed',
     }, indent=2) + '\n')

@@ -10,7 +10,7 @@
 
 将 PAM 层面向用户的提示改为中文，包括看向摄像头、输入密码、人脸已验证、未识别到人脸、光线不足、超时以及钥匙环解锁提示；同步调整相关测试。
 
-汉化范围集中在 `crates/pam-gaze/src/auth.rs` 和 `crates/pam-gaze/src/core.rs` 的认证交互提示。Gaze 的 GUI、CLI 和上游文档不属于本次完整汉化范围。
+中文界面覆盖 CLI、设置 GUI、PAM 提示和桌面集成；命令名称、选项和配置键保持上游格式。
 
 ### KRDP 远程登录修复
 
@@ -20,11 +20,10 @@
 
 ## Gaze 与 KRDP 合并 RPM
 
-已加入 KRDP 6.7.5 的画面冻结修复、源码、补丁和回归测试，并提供合并 RPM 构建脚本。
+单个 RPM 包含主程序、中文 CLI、设置 GUI、KDE 系统设置与锁屏集成，以及 KRDP 6.7.5 修复。版本保持 `0.3.8-1.fc44`，安装时替代同版本或更旧的独立 `gaze-gui`、`gaze-kde` 包。
 
 ```bash
-sudo dnf install ./dist/packages/x86_64/gaze-0.3.8-1.fc44.x86_64.rpm \
-  ./dist/packages/x86_64/gaze-gui-0.3.8-1.fc44.x86_64.rpm
+sudo dnf install ./dist/packages/x86_64/gaze-0.3.8-1.fc44.x86_64.rpm
 ```
 
 Windows App Android 客户端还需**关闭硬件解码**，避免光标/点击偏移。服务端修复处理约 4 秒后画面冻结的问题，两者经过分别回退验证。

@@ -86,10 +86,9 @@ python3 scripts/build-krdp-fix.py --deps-root /path/to/unpacked-rpm-root
 ```bash
 python3 scripts/build-combined-rpm.py \
   --base-rpm target/base-rpms/gaze-0.3.8-1.fc44.x86_64.rpm
-python3 scripts/build-ui-rpms.py
 ```
 
-也可以传入官方 `gaze 0.3.8 x86_64` RPM。基础包的版本、架构和所有文件 SHA256 都会验证。脚本重新构建守护进程、CLI、GUI 和两个 PAM 模块并测试 PAM；默认也重新构建/测试 KRDP。传入 `--reuse-krdp-build` 可复用项目内已通过测试且校验匹配的 KRDP 构建。
+也可以传入官方 `gaze 0.3.8 x86_64` RPM。基础包的版本、架构和所有文件 SHA256 都会验证。生成的单个 RPM 包含守护进程、CLI、GUI、KDE 集成、两个 PAM 模块和 KRDP 修复，无需另装 GUI 或 KDE 包。脚本重新构建守护进程、CLI、GUI 和两个 PAM 模块并测试 PAM；默认也重新构建/测试 KRDP。传入 `--reuse-krdp-build` 可复用项目内已通过测试且校验匹配的 KRDP 构建。
 
 ## 回退合并包
 
